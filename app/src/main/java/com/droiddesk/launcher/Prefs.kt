@@ -70,4 +70,38 @@ class Prefs(context: Context) {
     var drawerHeight: Float
         get() = sp.getFloat("drawerHeight", .68f).coerceIn(.30f, .82f)
         set(value) { sp.edit().putFloat("drawerHeight", value).apply() }
+
+    var iconSize: Int
+        get() = sp.getInt("iconSize", 1).coerceIn(0, 2)
+        set(value) { sp.edit().putInt("iconSize", value).apply() }
+
+    /** Bit mask of enabled desktop widgets: 1 clock+weather, 2 calendar, 4 system status, 8 quote. */
+    var widgetMask: Int
+        get() = sp.getInt("widgetMask", 7)
+        set(value) { sp.edit().putInt("widgetMask", value).apply() }
+
+    var seeded: Boolean
+        get() = sp.getBoolean("seeded", false)
+        set(value) { sp.edit().putBoolean("seeded", value).apply() }
+
+    var weatherCity: String
+        get() = sp.getString("weatherCity", "") ?: ""
+        set(value) { sp.edit().putString("weatherCity", value).apply() }
+
+    fun loadWeather(): WeatherInfo? {
+        if (!sp.contains("wxTime")) return null
+        return WeatherInfo(
+            sp.getString("wxName", "") ?: "",
+            sp.getInt("wxTemp", 0),
+            sp.getInt("wxCode", 0),
+            sp.getLong("wxTime", 0L)
+        )
+    }
+
+    fun saveWeather(w: WeatherInfo) {
+        sp.edit().putString("wxName", w.city).putInt("wxTemp", w.tempC)
+            .putInt("wxCode", w.code).putLong("wxTime", w.fetchedAt).apply()
+    }
+
+    fun clearWeather() { sp.edit().remove("wxTime").apply() }
 }

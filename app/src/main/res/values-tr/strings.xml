@@ -1,28 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DroidDesk</string>
-    <string name="desktop_title">MASAÜSTÜ</string>
-    <string name="desktop_hint">Masaüstü • Seçenekler için uygulamaya uzun bas veya sağ tıkla</string>
     <string name="desktop_empty">Henüz masaüstü kısayolu yok. Uygulamalar menüsünü açıp bir uygulamaya uzun basarak ekleyebilirsin.</string>
     <string name="apps">Uygulamalar</string>
     <string name="search_apps">Uygulama ara…</string>
     <string name="no_apps">Uygulama bulunamadı</string>
-    <string name="pinned">Sabitlenmiş</string>
-    <string name="recent">Son kullanılanlar</string>
-    <string name="all_apps">Tüm uygulamalar</string>
-    <string name="quick_settings">Hızlı ayarlar</string>
-    <string name="volume">Ses düzeyi</string>
-    <string name="brightness">Parlaklık (DroidDesk penceresi)</string>
 
-    <string name="tile_settings">Ayarlar</string>
-    <string name="tile_calendar">Takvim</string>
-    <string name="tile_files">Dosyalar</string>
-    <string name="tile_internet">İnternet</string>
+    <string name="tile_internet">Wi-Fi</string>
     <string name="tile_bluetooth">Bluetooth</string>
+    <string name="tile_airplane">Uçak Modu</string>
     <string name="tile_display">Ekran</string>
     <string name="tile_sound">Ses</string>
-    <string name="tile_storage">Depolama</string>
+    <string name="tile_battery">Pil</string>
     <string name="tile_power">Güç</string>
+    <string name="tile_settings">Ayarlar</string>
 
     <string name="menu_open">Aç</string>
     <string name="menu_open_external">Harici ekranda aç</string>
@@ -35,14 +26,57 @@
     <string name="menu_app_info">Uygulama bilgisi</string>
     <string name="menu_uninstall">Kaldır</string>
 
+    <string name="menu_wallpaper">Duvar kâğıdı değiştir</string>
+    <string name="menu_view">Görünüm</string>
+    <string name="menu_sort">Sırala</string>
+    <string name="menu_refresh">Yenile</string>
+    <string name="menu_add_widget">Widget ekle</string>
+    <string name="menu_open_drawer">Uygulama çekmecesini aç</string>
+    <string name="menu_files_window">Dosyalar penceresi</string>
+    <string name="menu_settings">Ayarlar</string>
+    <string name="view_small">Küçük simgeler</string>
+    <string name="view_medium">Orta simgeler</string>
+    <string name="view_large">Büyük simgeler</string>
+    <string name="sort_name">Ada göre</string>
+    <string name="sort_recent">Son kullanıma göre</string>
+
+    <string name="widget_clock">Saat ve hava durumu</string>
+    <string name="widget_calendar">Takvim</string>
+    <string name="widget_system">Sistem durumu</string>
+    <string name="widget_quote">Günün sözü</string>
+    <string name="system_status">Sistem Durumu</string>
+    <string name="sys_battery">Pil</string>
+    <string name="sys_storage">Depolama</string>
+    <string name="sys_ram">RAM</string>
+
+    <string name="weather_set_city">Şehir seçmek için dokun</string>
+    <string name="weather_city_title">Hava durumu şehri</string>
+    <string name="weather_city_msg">Şehir adı, hava durumunu almak için Open-Meteo\'ya gönderilir. Hava durumunu kapatmak için boş bırak.</string>
+    <string name="weather_city_hint">örn. İstanbul</string>
+    <string name="wx_clear">Açık</string>
+    <string name="wx_partly">Parçalı bulutlu</string>
+    <string name="wx_cloudy">Bulutlu</string>
+    <string name="wx_fog">Sisli</string>
+    <string name="wx_drizzle">Çiseleme</string>
+    <string name="wx_rain">Yağmurlu</string>
+    <string name="wx_snow">Karlı</string>
+    <string name="wx_storm">Gök gürültülü fırtına</string>
+
+    <string name="files_window_title">Dosyalar</string>
+    <string name="folder_documents">Belgeler</string>
+    <string name="folder_downloads">İndirilenler</string>
+    <string name="folder_pictures">Resimler</string>
+    <string name="folder_music">Müzik</string>
+
     <string name="settings_title">DroidDesk ayarları</string>
     <string name="set_accent">Vurgu rengi</string>
     <string name="set_gradient">Degrade arka plan</string>
     <string name="set_wallpaper">Duvar kâğıdı seç</string>
     <string name="set_glass">Cam efektini aç/kapat</string>
     <string name="set_taskbar">Görev çubuğu boyutu</string>
-    <string name="set_drawer_w">Başlat menüsü genişliği</string>
-    <string name="set_drawer_h">Başlat menüsü yüksekliği</string>
+    <string name="set_drawer_w">Uygulama çekmecesi genişliği</string>
+    <string name="set_drawer_h">Uygulama çekmecesi yüksekliği</string>
+    <string name="set_weather">Hava durumu şehri</string>
     <string name="set_clear">Masaüstü kısayollarını temizle</string>
     <string name="set_keyboard">Klavye kısayolları (Alt+Tab, Win tuşu)</string>
     <string name="set_notifications">Bildirim erişimi (tepsi)</string>
@@ -76,12 +110,16 @@
     <string name="a11y_needed_msg">%1$s için DroidDesk erişilebilirlik hizmeti gerekir. Yalnızca klavye kısayolları ve sistem eylemleri için kullanılır, ekran içeriğini okumaz. Erişilebilirlik ayarları açılsın mı?</string>
     <string name="a11y_description">DroidDesk klavye kısayolları (Alt+Tab, Win tuşu) ve sistem eylemleri. Ekran içeriğini okumaz.</string>
     <string name="notif_access_title">Bildirim erişimi</string>
-    <string name="notif_access_msg">Tepside bildirim sayısını göstermek için DroidDesk\'e bildirim erişimi ver. Yalnızca sayı kullanılır; içerikler okunmaz ve saklanmaz.</string>
+    <string name="notif_access_msg">Tepside bildirim zilini göstermek için DroidDesk\'e bildirim erişimi ver. Yalnızca sayı kullanılır; içerikler okunmaz ve saklanmaz.</string>
     <string name="tray_notifications">Bildirimler</string>
 
-    <string name="net_wifi">Wi-Fi</string>
-    <string name="net_mobile">Mobil</string>
-    <string name="net_eth">Ethernet</string>
-    <string name="net_other">Çevrimiçi</string>
-    <string name="net_none">Çevrimdışı</string>
+    <string-array name="quotes">
+        <item>Daha iyi bir yarın, bugünkü küçük adımlarla başlar.</item>
+        <item>Mükemmelliği değil, ilerlemeyi hedefle.</item>
+        <item>Bulunduğun yerden, elindekilerle başla.</item>
+        <item>Sakin bir zihin, aceleci bir zihinden daha çok iş bitirir.</item>
+        <item>Azar azar yapılan iş, zamanla alışkanlığa dönüşür.</item>
+        <item>Bugün başlamak için güzel bir gün.</item>
+        <item>Merak, öğrenmenin en kısa yoludur.</item>
+    </string-array>
 </resources>
