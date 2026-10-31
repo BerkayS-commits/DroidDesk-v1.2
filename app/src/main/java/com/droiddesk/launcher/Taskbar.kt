@@ -1,5 +1,7 @@
 package com.droiddesk.launcher
 
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -10,14 +12,25 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import java.util.Date
 import kotlin.math.abs
 
+/** Icons for the app-drawer button. Kept in one place so the taskbar, overlay and settings agree. */
+object StartIcons {
+    val res = intArrayOf(
+        R.drawable.ic_start_dots, R.drawable.ic_start_ring, R.drawable.ic_start_hex, R.drawable.ic_start_squares,
+        R.drawable.ic_start_star, R.drawable.ic_start_bolt, R.drawable.ic_start_flower, R.drawable.ic_start_diamond
+    )
+    val names = intArrayOf(
+        R.string.start_dots, R.string.start_ring, R.string.start_hex, R.string.start_squares,
+        R.string.start_star, R.string.start_bolt, R.string.start_flower, R.string.start_diamond
+    )
+}
+
 /**
- * The taskbar: start button, optional search, pinned + active apps, and the system tray.
- * Active apps get a light under their icon; long-press an app, then drag it sideways to reorder.
+ * The taskbar: optional system navigation buttons, start button, optional search, pinned + active apps,
+ * recent-apps button and the system tray. Active apps get a light under their icon; long-press an app,
+ * then drag it sideways to reorder.
  */
 class Taskbar(private val a: MainActivity) {
     lateinit var card: FrameLayout
@@ -30,6 +43,7 @@ class Taskbar(private val a: MainActivity) {
 
     private lateinit var centerScroll: HorizontalScrollView
     private lateinit var items: LinearLayout
+    private lateinit var navBox: LinearLayout
     private lateinit var chevron: ImageView
     private lateinit var wifi: FrameLayout
     private lateinit var bt: FrameLayout
@@ -57,6 +71,20 @@ class Taskbar(private val a: MainActivity) {
         centerScroll.addView(items, FrameLayout.LayoutParams(-2, -1))
         bar.addView(centerScroll, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
 
+        navBox = LinearLayout(a)
+        navBox.orientation = LinearLayout.HORIZONTAL
+        navBox.gravity = Gravity.CENTER_VERTICAL
+        navBox.setPadding(a.dp(6), 0, a.dp(4), 0)
+        navBox.addView(fixedIcon(R.drawable.ic_nav_back, R.string.nav_back, 20) { a.systemBack() }, LinearLayout.LayoutParams(a.dp(42), -1))
+        navBox.addView(fixedIcon(R.drawable.ic_nav_home, R.string.nav_home, 20) { a.goHome() }, LinearLayout.LayoutParams(a.dp(42), -1))
+        navBox.addView(fixedIcon(R.drawable.ic_nav_square, R.string.task_view, 20) { a.openRecents() }, LinearLayout.LayoutParams(a.dp(42), -1))
+        val sepLine = View(a)
+        sepLine.setBackgroundColor(Color.argb(50, 255, 255, 255))
+        val sp = LinearLayout.LayoutParams(a.dp(1), a.dp(26))
+        sp.leftMargin = a.dp(6)
+        navBox.addView(sepLine, sp)
+        bar.addView(navBox, FrameLayout.LayoutParams(-2, -1, Gravity.START or Gravity.CENTER_VERTICAL))
+
         trayBox = LinearLayout(a)
         trayBox.orientation = LinearLayout.HORIZONTAL
         trayBox.gravity = Gravity.CENTER_VERTICAL
@@ -68,18 +96,19 @@ class Taskbar(private val a: MainActivity) {
 
         wifi = a.circleIcon(R.drawable.ic_wifi, Theme.panel2, Theme.text, 18)
         wifi.setOnClickListener { a.openInternetPanel() }
-        wifi.tooltipText = a.getString(R.string.tile_internet)
+        wifi.tip(a.getString(R.string.tile_internet))
+        a.hoverScale(wifi)
         bt = a.circleIcon(R.drawable.ic_bluetooth, Theme.panel2, Theme.text, 18)
         bt.setOnClickListener { a.openSettings(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS) }
-        bt.tooltipText = a.getString(R.string.tile_bluetooth)
+        bt.tip(a.getString(R.string.tile_bluetooth))
         vol = a.circleIcon(R.drawable.ic_volume, Theme.panel2, Theme.text, 18)
         vol.setOnClickListener { a.openVolumePanel() }
-        vol.tooltipText = a.getString(R.string.tile_sound)
+        vol.tip(a.getString(R.string.tile_sound))
 
         bellWrap = FrameLayout(a)
         bell = a.circleIcon(R.drawable.ic_bell, Theme.panel2, Theme.text, 18)
         bell.setOnClickListener { a.toggleNotifications(0) }
-        bell.tooltipText = a.getString(R.string.tab_notifications)
+        bell.tip(a.getString(R.string.tab_notifications))
         bellWrap.addView(bell, FrameLayout.LayoutParams(a.dp(34), a.dp(34), Gravity.CENTER))
         badge = a.label("0", 9, Color.WHITE, true)
         badge.gravity = Gravity.CENTER
@@ -92,8 +121,12 @@ class Taskbar(private val a: MainActivity) {
 
         bat = a.circleIcon(R.drawable.ic_battery, Theme.panel2, Theme.text, 18)
         bat.setOnClickListener { a.openSettings(android.content.Intent.ACTION_POWER_USAGE_SUMMARY) }
-        bat.tooltipText = a.getString(R.string.tile_battery)
+        bat.tip(a.getString(R.string.tile_battery))
 
+        a.hoverScale(bt)
+        a.hoverScale(vol)
+        a.hoverScale(bell)
+        a.hoverScale(bat)
         trayBox.addView(wifi, llp(a.dp(34), a.dp(34), a.dp(6)))
         trayBox.addView(bt, llp(a.dp(34), a.dp(34), a.dp(6)))
         trayBox.addView(vol, llp(a.dp(34), a.dp(34), a.dp(6)))
@@ -111,7 +144,7 @@ class Taskbar(private val a: MainActivity) {
         return card
     }
 
-    /** Show/hide tray icons per settings, and keep the app group clear of the tray. */
+    /** Show/hide tray icons and navigation buttons per settings, and keep the app group clear of both. */
     fun layout() {
         if (!::trayBox.isInitialized) return
         val m = a.prefs.trayMask
@@ -121,17 +154,21 @@ class Taskbar(private val a: MainActivity) {
         bellWrap.visibility = vis((m and 8) != 0)
         bat.visibility = vis((m and 16) != 0)
         chevron.rotation = if (expanded) 180f else 0f
+        navBox.visibility = vis(a.prefs.showNav)
         trayBox.measure(0, 0)
-        val margin = trayBox.measuredWidth + a.dp(8)
+        navBox.measure(0, 0)
+        val trayW = trayBox.measuredWidth + a.dp(8)
+        val navW = if (a.prefs.showNav) navBox.measuredWidth + a.dp(8) else 0
         val lp = centerScroll.layoutParams as FrameLayout.LayoutParams
         if (a.prefs.taskbarAlign == 1) {
+            val side = maxOf(trayW, navW)
             lp.gravity = Gravity.CENTER
-            lp.leftMargin = margin
-            lp.rightMargin = margin
+            lp.leftMargin = side
+            lp.rightMargin = side
         } else {
             lp.gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            lp.leftMargin = a.dp(6)
-            lp.rightMargin = margin
+            lp.leftMargin = maxOf(a.dp(6), navW)
+            lp.rightMargin = trayW
         }
         centerScroll.layoutParams = lp
     }
@@ -154,20 +191,16 @@ class Taskbar(private val a: MainActivity) {
         val start = FrameLayout(a)
         start.isClickable = true
         start.isFocusable = true
-        val startRes = when (a.prefs.startIcon) {
-            1 -> R.drawable.ic_start_ring
-            2 -> R.drawable.ic_start_hex
-            else -> R.drawable.ic_start_dots
-        }
+        val startRes = StartIcons.res[a.prefs.startIcon.coerceIn(0, StartIcons.res.size - 1)]
         start.addView(a.iconView(startRes, accent), FrameLayout.LayoutParams(a.dp(24), a.dp(24), Gravity.CENTER))
         start.setOnClickListener { a.toggleDrawer() }
-        start.tooltipText = a.getString(R.string.apps)
-        a.hoverable(start)
+        start.tip(a.getString(R.string.apps))
+        a.hoverable(start, 12, 1.12f)
         startView = start
         items.addView(start, LinearLayout.LayoutParams(a.dp(48), -1))
 
         if (a.prefs.showSearch) {
-            items.addView(fixedIcon(R.drawable.ic_search, R.string.search_tooltip) { a.openDrawer(true) }, LinearLayout.LayoutParams(a.dp(48), -1))
+            items.addView(fixedIcon(R.drawable.ic_search, R.string.search_tooltip, 22) { a.openDrawer(true) }, LinearLayout.LayoutParams(a.dp(48), -1))
         }
 
         val pinned = a.pinned
@@ -180,8 +213,8 @@ class Taskbar(private val a: MainActivity) {
             val level = active[pkg] ?: 0
             val cell = FrameLayout(a)
             cell.isClickable = true
-            cell.tooltipText = app.label
-            a.hoverable(cell)
+            cell.tip(app.label)
+            a.hoverable(cell, 12, 1.14f)
             val icon = ImageView(a)
             icon.setImageBitmap(app.icon)
             icon.setPadding(a.dp(3), a.dp(3), a.dp(3), a.dp(3))
@@ -195,7 +228,7 @@ class Taskbar(private val a: MainActivity) {
         }
 
         if (a.prefs.showTaskView) {
-            items.addView(fixedIcon(R.drawable.ic_recents, R.string.task_view) { a.altTab() }, LinearLayout.LayoutParams(a.dp(48), -1))
+            items.addView(fixedIcon(R.drawable.ic_recents, R.string.task_view, 22) { a.openRecents() }, LinearLayout.LayoutParams(a.dp(48), -1))
         }
         a.updateScrim()
     }
@@ -216,14 +249,14 @@ class Taskbar(private val a: MainActivity) {
         cell.addView(bar, lp)
     }
 
-    private fun fixedIcon(res: Int, tooltipRes: Int, action: () -> Unit): FrameLayout {
+    private fun fixedIcon(res: Int, tooltipRes: Int, iconDp: Int, action: () -> Unit): FrameLayout {
         val cell = FrameLayout(a)
         cell.isClickable = true
         cell.isFocusable = true
-        cell.tooltipText = a.getString(tooltipRes)
-        cell.addView(a.iconView(res, Theme.text), FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.CENTER))
+        cell.tip(a.getString(tooltipRes))
+        cell.addView(a.iconView(res, Theme.text), FrameLayout.LayoutParams(a.dp(iconDp), a.dp(iconDp), Gravity.CENTER))
         cell.setOnClickListener { action() }
-        a.hoverable(cell)
+        a.hoverable(cell, 12, 1.14f)
         return cell
     }
 

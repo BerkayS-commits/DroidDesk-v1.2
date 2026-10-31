@@ -69,15 +69,15 @@ class NotificationCenter(private val a: MainActivity) {
         header.addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
         clearBtn = a.circleIcon(R.drawable.ic_clear_all, Theme.panel2, Theme.text, 18)
         clearBtn.setOnClickListener { DroidBridge.listener?.cancelAllNotifications() }
-        clearBtn.tooltipText = a.getString(R.string.notif_clear_all)
+        clearBtn.tip(a.getString(R.string.notif_clear_all))
         header.addView(clearBtn, llp(a.dp(34), a.dp(34)))
         val tune = a.circleIcon(R.drawable.ic_tune, Theme.panel2, Theme.text, 18)
         tune.setOnClickListener { a.showSettingsPanel(0, 0) }
-        tune.tooltipText = a.getString(R.string.droiddesk_settings)
+        tune.tip(a.getString(R.string.droiddesk_settings))
         header.addView(tune, llp(a.dp(34), a.dp(34), a.dp(6)))
         val gear = a.circleIcon(R.drawable.ic_settings, Theme.panel2, Theme.text, 18)
         gear.setOnClickListener { a.openAndroidSettings() }
-        gear.tooltipText = a.getString(R.string.android_settings)
+        gear.tip(a.getString(R.string.android_settings))
         header.addView(gear, llp(a.dp(34), a.dp(34), a.dp(6)))
         content.addView(header, LinearLayout.LayoutParams(-1, a.dp(40)))
 

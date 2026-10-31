@@ -9,6 +9,7 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -62,20 +63,7 @@ object IconStyler {
             d.draw(c)
             return bmp
         }
-        if (d is AdaptiveIconDrawable) {
-            // Adaptive icons are 108dp with a 72dp visible area; draw both layers full-bleed under the mask.
-            val pad = (size * 0.25f).toInt()
-            val bg = d.background
-            if (bg != null) {
-                bg.setBounds(-pad, -pad, size + pad, size + pad)
-                bg.draw(c)
-            }
-            val fg = d.foreground
-            if (fg != null) {
-                fg.setBounds(-pad, -pad, size + pad, size + pad)
-                fg.draw(c)
-            }
-        } else {
+        if (!drawAdaptive(d, c, size)) {
             c.drawColor(0xFF1E293B.toInt())
             val inset = (size * 0.14f).toInt()
             d.setBounds(inset, inset, size - inset, size - inset)
@@ -85,6 +73,24 @@ object IconStyler {
         mask.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
         c.drawPath(path(shape, size.toFloat()), mask)
         return bmp
+    }
+
+    /** Adaptive icons (Android 8+): draw both layers full-bleed under the mask. Returns false if not adaptive. */
+    private fun drawAdaptive(d: Drawable, c: Canvas, size: Int): Boolean {
+        if (Build.VERSION.SDK_INT < 26) return false
+        if (d !is AdaptiveIconDrawable) return false
+        val pad = (size * 0.25f).toInt()
+        val bg = d.background
+        if (bg != null) {
+            bg.setBounds(-pad, -pad, size + pad, size + pad)
+            bg.draw(c)
+        }
+        val fg = d.foreground
+        if (fg != null) {
+            fg.setBounds(-pad, -pad, size + pad, size + pad)
+            fg.draw(c)
+        }
+        return true
     }
 
     /** Small preview of a shape for the settings screen. */

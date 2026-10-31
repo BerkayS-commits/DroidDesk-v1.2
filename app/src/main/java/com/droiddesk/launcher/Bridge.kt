@@ -10,6 +10,16 @@ object DroidBridge {
     @Volatile var foregroundPkg: String = ""
     @Volatile private var startRequested: Boolean = false
     @Volatile private var shrinkPkg: String? = null
+    @Volatile private var pendingAction: String? = null
+
+    /** Ask the launcher to run an action ("drawer", "search", "files", "settings", "notifications", "desktop", "switcher"). */
+    fun requestAction(name: String) { pendingAction = name }
+
+    fun consumeAction(): String? {
+        val a = pendingAction
+        pendingAction = null
+        return a
+    }
 
     fun requestStart() { startRequested = true }
 

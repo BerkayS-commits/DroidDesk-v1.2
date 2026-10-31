@@ -22,6 +22,25 @@ object ActiveApps {
         }
     }
 
+    /** Packages ordered by last activity, newest first, with the time of that activity. */
+    fun recentOrder(ctx: Context, windowMs: Long): List<Pair<String, Long>> {
+        val last = HashMap<String, Long>()
+        try {
+            val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val end = System.currentTimeMillis()
+            val events = usm.queryEvents(end - windowMs, end) ?: return emptyList()
+            val e = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                val p = e.packageName ?: continue
+                if (e.eventType == 1 || e.eventType == 2 || e.eventType == 23) last[p] = e.timeStamp
+            }
+        } catch (ex: Exception) {
+            // Permission revoked or unavailable.
+        }
+        return last.entries.sortedByDescending { it.value }.map { it.key to it.value }
+    }
+
     /** package -> 2 (visible now) or 1 (used within [windowMs]). */
     fun compute(ctx: Context, windowMs: Long): Map<String, Int> {
         val out = HashMap<String, Int>()

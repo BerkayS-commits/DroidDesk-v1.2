@@ -1,54 +1,38 @@
-# DroidDesk 1.4 – Windows 11'den esinlenen Android launcher
+# DroidDesk 1.5 – klavye ve fareyle kullanılan masaüstü hissi veren Android launcher
 
-1.4 sürümü, 1.3 üzerine gelen istekleri uygular. Kod modüllere bölündü: `MainActivity` (kabuk ve yönlendirme), `Taskbar`, `DesktopWidgets`, `NotificationCenter`, `SearchResults`, `SettingsPanel`, `FilesWindow`.
+Desteklenen Android sürümleri: **7.0 (API 24) ve üzeri**. Derleme hedefi Android 15 (API 35); daha yeni sürümlerde yalnızca herkese açık API'ler kullanılır ve hedef sürüm 35 olduğu için sistem uyumluluk davranışı uygular. Android 16 ve sonrası bu ortamda denenemedi (aşağıya bak).
 
-## Yeni ve değişen özellikler
+## 1.5'te yeni / düzeltilen
 
-**Bildirimler / sağ alt panel**
-- Bildirimler artık yukarıdan çekilmez; sağ alttaki **bildirim merkezi** panelinde listelenir: dokununca açar, tek tek veya hepsini temizler, uygulamaya göre gruplar (daraltılabilir), önizlemeyi gizleyebilirsin.
-- Panelde **Bildirimler** ve **Hızlı ayarlar** sekmeleri var. Başlıktaki iki düğme **DroidDesk ayarlarına** ve doğrudan **Android cihaz ayarlarına** gider.
-- Özelleştirme: panel genişliği, varsayılan sekme, gruplama, önizleme, süregelen bildirimler, en fazla bildirim sayısı, hangi hızlı kutuların görüneceği ve kutu şekli (daire / yuvarlatılmış kare).
-- Bildirim erişimi izni gerekir (yalnızca ekranda göstermek için kullanılır, saklanmaz/gönderilmez).
+**Düzeltmeler**
+- **Sağ tık / uzun basma menüsü artık çekmecenin önünde.** Sorun, çekmece kartının yüksekliğinin (elevation) menüden fazla olmasıydı; menü en üst katmana alındı.
+- **Simge şekli masaüstünü de kapsıyor:** Şekil ve simge paketi masaüstü, görev çubuğu, çekmece, son uygulamalar ve bildirim paneli için aynı kaynaktan geliyor. Tek bir simgenin işlenememesi artık listeyi boşaltmıyor (o simge orijinal çiziliyor).
 
-**Ayarlar (yeniden tasarlandı)**
-- Launcher içinde tam ekran ayar paneli: Görünüm, Görev çubuğu, Uygulama çekmecesi, Widget'lar, Bildirimler, Fare ve tuşlar, Arama, Sistem sekmeleri. Anahtarlar, seçim çipleri, kaydırıcılar, renk örnekleri, duvar kâğıdı önizlemeleri ve simge şekli önizlemeleri.
-- **Vurgu renkleri:** 13 hazır renk + ton/doygunluk/parlaklıkla özel renk.
-- **Gömülü duvar kâğıtları:** 8 adet (Dağ gölü, Aurora, Okyanus, Çöl kumulları, Yıldızlı gece, Orman, Neon, Pastel). Kodla çizildiği için ek görsel dosyası gerekmez. İstersen kendi fotoğrafını da seçebilirsin.
-
-**Simgeler**
-- **Şekil:** Orijinal, daire, yuvarlatılmış kare, kare, **su damlası**, yaprak, altıgen.
-- **Simge paketleri:** ADW/Nova/Go biçimindeki (appfilter) yüklü paketler listelenir ve seçilir.
-
-**Görev çubuğu**
-- Uygulama çekmecesi düğmesi artık Windows logosuna benzemez: nokta ızgarası, halka veya altıgen seçilebilir. Rengi vurgu rengini izler.
-- **Etkin uygulamaların altında ışık:** parlak çubuk = şu an önde; kısa çubuk = yakın zamanda kullanıldı. Sabitleme aynen çalışır; sabitli olmayan ama etkin uygulamalar geçici olarak görünür.
-- **Uzun bas ve sürükle:** görev çubuğundaki uygulamaları yana kaydırarak sırala. Hareket ettirmeden bırakırsan menüsü açılır.
-- Simge konumu (sol/orta), arama düğmesini aç/kapat, son uygulamalar düğmesini aç/kapat, tepsi simgelerini tek tek aç/kapat.
-- Pencerede aç seçeneği (cihaz destekliyorsa).
-
-**Arama**
-- Görev çubuğundaki arama düğmesi çekmeceyi aratmaya hazır açar. Sonuçlar: **uygulamalar, klasörler ve dosyalar**. Dosya/klasör araması için "Tüm dosyalara erişim" izni gerekir (ayarlardan verilir). Enter ilk sonucu açar.
+**Tuş seçim ekranı (Ayarlar → Fare ve tuşlar)**
+- Basılan kombinasyonu canlı gösteren ve hazır kısayol sunan bir ekran. İki bağlama kullanılır:
+  1. **Görev çubuğunu açık uygulamanın üzerine getiren tuş.** Tuşa basınca görev çubuğu o an açık olan uygulamanın üstünde belirir (Başlat, sabitli ve etkin uygulamalar, son uygulamalar, saat, isteğe bağlı gezinme düğmeleri); dışına dokununca kapanır. İsteğe bağlı olarak **fareyi ekranın alt kenarına götürünce** de açılır.
+  2. Öndeki uygulamayı pencere modunda yeniden açan tuş.
+- Üst katman, erişilebilirlik hizmeti ile çizilir (ayrıca "üstte görüntüle" izni gerekmez).
 
 **Uygulama çekmecesi**
-- Konum: **sol / orta / sağ**. Ayrıca genişlik, yükseklik, sütun sayısı (otomatik/4/5/6) ve uygulama adlarını gösterme seçenekleri.
+- **Yukarıdan aşağıya kaydırma** (varsayılan; fare tekerleği çalışır) veya sayfalı mod, ayarlardan seçilir.
+- **8 farklı düğme simgesi:** nokta, halka, altıgen, kareler, yıldız, şimşek, çiçek, elmas.
 
-**Widget'lar**
-- Her widget'ı **serbestçe boyutlandır** (köşe tutamacını sürükle) veya Küçük/Orta/Büyük hazır boyut seç; yukarı/aşağı taşı.
-- **Varsayılan widget'ları kaldırma:** tek tek kaldır, "Tüm widget'ları kaldır" veya "Varsayılanları geri yükle".
+**Masaüstü hissi**
+- Masaüstü, çekmece, görev çubuğu ve son uygulamalar ekranında fareyle üzerinden geçerken simgeler büyür; el imleci görünür; klavyeyle gezerken odaklanan öğe çerçevelenir.
+- **Klavye kısayolları:** Win = çekmece, Win+D masaüstü, Win+E dosyalar, Win+S arama, Win+A bildirimler, Win+I ayarlar, Win+Tab / Alt+Tab son uygulamalar, Ctrl+Esc çekmece, Esc paneller, ok tuşları + Enter simgeler arasında gezinme ve açma, Delete masaüstü kısayolunu kaldırma. (Başka uygulamadayken çalışması için erişilebilirlik hizmeti gerekir.)
 
-**Fare ve dokunmatik**
-- Sağ tık menüleri: masaüstü, uygulama simgeleri, görev çubuğu, Başlat düğmesi (hızlı bağlantılar), tepsi, widget'lar. Fareyle üzerine gelince vurgu ve ipucu görünür. Dokunmatikte uzun basma aynı menüleri açar.
-- **Seçilebilir davranışlar:** simgede sağ tık (menü / aç / uygulama bilgisi), masaüstünde sağ tık (menü / hiçbir şey), simgeleri açma (tek / çift tıklama), boş masaüstünde çift tıklama (hiçbir şey / çekmece / menü / bildirimler).
+**Son uygulamalar (yeniden tasarlandı)**
+- Düğme ve Alt+Tab artık **kare bloklar halinde** bir geçiş ekranı açar: her blokta uygulama simgesi ve adı, tek tek kapatma düğmesi; altta **"Tümünü kapat"**. Klavye: Tab/oklar seç, Enter aç, Delete kapat, Esc çık; Alt tuşunu bırakınca seçili uygulama açılır.
+- İstersen düğmeyi sistemin kendi son uygulamalar ekranına geri çevirebilirsin (Görev çubuğu ayarları).
 
-**Pencere modu tuşu**
-- Fare ve tuşlar sekmesinde bir tuş kombinasyonu **kaydedebilir** veya hazır listeden seçebilirsin. Tuşa basınca öndeki uygulama Ana ekran üzerinden pencere modunda yeniden açılır (erişilebilirlik hizmeti gerekir; aşağıdaki sınırlamaya bak).
+**Sistem gezinmesi**
+- Görev çubuğuna **Geri, Ana ekran, Son uygulamalar** düğmeleri eklenebilir. Ayarlardan veya görev çubuğuna sağ tıklayarak açılıp kapanır.
 
-## İsteğe bağlı izinler (hepsi varsayılan kapalı, sistem ayarlarından verilir)
-- **Erişilebilirlik hizmeti:** Alt+Tab, Win tuşu, güç menüsü, pencere modu tuşu. Ekran içeriğini okumaz.
-- **Bildirim erişimi:** bildirim merkezi.
-- **Kullanım erişimi:** etkin uygulama ışığı için gerçek ön plan/yakın zamanlı kullanım bilgisi.
-- **Tüm dosyalara erişim:** dosya ve klasör araması.
-- **İnternet:** yalnızca hava durumu için; şehir adı girmezsen hiçbir ağ isteği yapılmaz.
+## İsteğe bağlı izinler (varsayılan kapalı)
+- **Erişilebilirlik hizmeti:** Win/Alt+Tab kısayolları, açık uygulamanın üstünde görev çubuğu ve geçiş ekranı, Geri düğmesi, güç menüsü, pencere modu tuşu. Ekran içeriğini okumaz.
+- **Bildirim erişimi**, **Kullanım erişimi** (etkin uygulama ışığı ve son uygulamalar sırası), **Tüm dosyalara erişim** (dosya araması), **İnternet** (yalnızca hava durumu).
+- **Arka plan işlemlerini sonlandırma** (normal izin): "Tümünü kapat" için.
 
 ## GitHub Actions ile APK derleme
 1. ZIP'i açın ve **içindekilerin tümünü** depo köküne yükleyin (`.github` dahil).
@@ -56,11 +40,10 @@
 3. `DroidDesk-debug-apk` artifact'ini indirip kurun, ana ekran olarak DroidDesk'i seçin.
 
 ## Sınırlamalar (dürüst liste)
-- Kaynak kod Android SDK ile **derlenip cihazda denenmemiştir**; ilk Actions derlemesi doğrulamadır.
-- **Pencere modu tuşu** Android'in izin verdiği kadar çalışır: DroidDesk başka uygulamanın penceresini doğrudan küçültemez. Bunun yerine uygulamayı pencere sınırlarıyla yeniden açar. Cihazda **serbest pencere (freeform) desteği açık olmalı** (Geliştirici seçenekleri → "Serbest biçimli pencereleri etkinleştir"; ayarlarda kısayol var). Desteklemeyen cihazda uygulama tam ekran açılır ve bir uyarı gösterilir. Bazı uygulamalar yeniden boyutlandırmayı reddeder.
-- **Işık:** Android çalışan uygulamaları listelemeye izin vermez. Kullanım erişimiyle "önde / son 30 dk / son 2 saat" bilgisi alınır; tam olarak "arka planda çalışıyor" bilgisi yoktur. İzin verilmezse yalnızca DroidDesk'ten açılan uygulamalar ışık alır.
-- **Dosya araması** harici depolamadaki dosya ve klasör adlarına bakar (içeriğe bakmaz); ilk kullanımda dizin oluşturulurken kısa süre beklenebilir. `Android/` klasörü hariçtir.
-- **Simge paketleri** yalnızca yaygın "appfilter" biçimini destekler; pakette karşılığı olmayan uygulamalar seçili şekille çizilir.
-- Alt+Tab sistemin Son Uygulamalar ekranını açar. Widget'lar telefon dikey modunda (genişlik < 720 dp) gizlenir.
-- Hava durumu simgeleri emojidir. Taslaktaki Geri Dönüşüm Kutusu / Yeni klasör yoktur. Dosyalar penceresi kısayolları sistem uygulamalarını açar.
-- Wi-Fi/Bluetooth/Uçak modu kutuları sistem panelini veya ayarını açar; doğrudan aç/kapat yapmaz. Parlaklık yalnızca DroidDesk penceresini etkiler.
+- Kaynak kod Android SDK ile **derlenip cihazda denenmemiştir**; ilk Actions derlemesi doğrulamadır. Android 7–15 için API sürümü korumaları eklendi; **Android 16 ve 17'de davranış doğrulanamadı**.
+- **"Kapat" ne yapar:** Android, başlatıcılara başka uygulamayı kapatma yetkisi vermez. "Kapat" ve "Tümünü kapat", uygulamanın **arka plan işlemlerini sonlandırır** ve listeden çıkarır. Ön plandaki uygulama kapanmaz. Bazı üreticiler bunu kısıtlar.
+- **Son uygulamalar listesi:** Android uygulamalara gerçek son görev listesini vermez. Liste, "Kullanım erişimi" verilirse kullanım olaylarından, verilmezse DroidDesk'ten açılan uygulamalardan oluşur. Önizleme (ekran görüntüsü) gösterilemez; bloklarda simge ve ad vardır.
+- **Açık uygulamanın üstündeki görev çubuğu** erişilebilirlik hizmeti ister. Oradan uygulama başlatma bazı Android sürümlerinde arka plan başlatma kısıtına takılabilir; başlatılamazsa uyarı görünür. Başlat düğmesi Ana ekrana dönüp çekmeceyi açar.
+- **Pencere modu tuşu** uygulamayı pencere sınırlarıyla yeniden açar ve cihazda **serbest pencere desteği** gerektirir (Geliştirici seçenekleri). Desteklemeyen cihazda tam ekran açılır.
+- Işık, dosya araması, simge paketi, hava durumu ve diğer önceki sınırlamalar 1.4'teki gibidir. Dosya/klasör araması harici depolamada ad eşleştirir; içeriğe bakmaz.
+- Wi-Fi/Bluetooth/Uçak modu kutuları sistem panelini veya ayarını açar; doğrudan aç/kapat yapmaz.

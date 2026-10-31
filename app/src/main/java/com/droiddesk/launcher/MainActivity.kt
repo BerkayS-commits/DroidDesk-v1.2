@@ -2,6 +2,7 @@ package com.droiddesk.launcher
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.app.AlertDialog
 import android.bluetooth.BluetoothManager
@@ -52,6 +53,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import kotlin.math.abs
@@ -103,6 +105,10 @@ class MainActivity : ComponentActivity() {
     private var lastClickPkg = ""
     private var lastClickTime = 0L
     private var selectedTile: View? = null
+    private var switcher: RecentsUi? = null
+    private var switcherView: View? = null
+    private var switcherViaAlt = false
+    private var metaChordMain = false
 
     private var pageCols = 4
     private var perPage = 20
@@ -119,6 +125,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var drawerCard: FrameLayout
     private lateinit var drawerSearch: EditText
     private lateinit var drawerPager: ViewPager2
+    private lateinit var drawerList: RecyclerView
     private lateinit var dotsRow: LinearLayout
 
     internal lateinit var taskbar: Taskbar
@@ -130,6 +137,7 @@ class MainActivity : ComponentActivity() {
     internal val currentSettings: SettingsPanel? get() = settings
 
     private val pageAdapter = PageAdapter()
+    private val listAdapter = AppListAdapter()
 
     private val wallpaperPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -178,7 +186,8 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 // A launcher must never finish itself: just close whatever is open.
-                if (menuOpen) dismissMenu()
+                if (switcher != null) closeSwitcher()
+                else if (menuOpen) dismissMenu()
                 else if (settings != null) closeSettings()
                 else if (drawerOpen) closeDrawer()
                 else if (notifOpen) closeNotifications()
@@ -207,6 +216,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Home pressed while DroidDesk is already on screen.
+        closeSwitcher()
         dismissMenu()
         closeNotifications()
         if (settings != null) closeSettings()
@@ -223,6 +233,8 @@ class MainActivity : ComponentActivity() {
 
     /** The accessibility service can ask us to relaunch the app that was in front in a window. */
     private fun handlePendingActions() {
+        val action = DroidBridge.consumeAction()
+        if (action != null) runAction(action)
         val pkg = DroidBridge.consumeShrink() ?: return
         val app = appMap[pkg]
         if (app != null) launchApp(app, null, true)
@@ -636,8 +648,7 @@ class MainActivity : ComponentActivity() {
     internal fun applyDrawerPrefs() {
         drawerHeightFrac = prefs.drawerHeight
         updateOverlayLayout()
-        pageAdapter.notifyDataSetChanged()
-        rebuildDots()
+        applyFilter()
     }
 
     internal fun applyIconPrefs() {
@@ -690,7 +701,7 @@ class MainActivity : ComponentActivity() {
         name.setShadowLayer(4f, 0f, 1f, 0xAA000000.toInt())
         name.visibility = if (prefs.showLabels) View.VISIBLE else View.GONE
         tile.addView(name, LinearLayout.LayoutParams(-1, dp(34)))
-        hoverable(tile)
+        hoverable(tile, 12, 1.08f)
         return tile
     }
 
@@ -701,6 +712,15 @@ class MainActivity : ComponentActivity() {
         tile.setOnClickListener { onTileClick(tile, app, onDesktop) }
         tile.setOnLongClickListener { showAppMenu(app, onDesktop); true }
         tile.setOnContextClickListener { onTileContext(app, onDesktop); true } // mouse right-click
+        // Keyboard: Delete removes a desktop shortcut.
+        tile.setOnKeyListener { _, keyCode, ev ->
+            if (onDesktop && ev.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL)) {
+                toggleShortcut(app.pkg)
+                true
+            } else {
+                false
+            }
+        }
     }
 
     /** Single click opens; with "double click to open" the first click only selects (Windows style). */
@@ -765,6 +785,22 @@ class MainActivity : ComponentActivity() {
         override fun getItemCount(): Int = maxOf(1, (filtered.size + perPage - 1) / perPage)
     }
 
+    private inner class TileVH(val tile: LinearLayout) : RecyclerView.ViewHolder(tile)
+
+    private inner class AppListAdapter : RecyclerView.Adapter<TileVH>() {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TileVH {
+            val t = buildTile(42)
+            t.layoutParams = RecyclerView.LayoutParams(-1, dp(96))
+            return TileVH(t)
+        }
+
+        override fun onBindViewHolder(holder: TileVH, position: Int) {
+            bindTile(holder.tile, filtered[position], false)
+        }
+
+        override fun getItemCount(): Int = filtered.size
+    }
+
     private fun buildDrawer() {
         val content = LinearLayout(this)
         content.orientation = LinearLayout.VERTICAL
@@ -818,6 +854,12 @@ class MainActivity : ComponentActivity() {
             if (b - t != ob - ot) recomputePages()
         }
         holder.addView(drawerPager, FrameLayout.LayoutParams(-1, -1))
+        drawerList = RecyclerView(this)
+        drawerList.layoutManager = GridLayoutManager(this, 4)
+        drawerList.adapter = listAdapter
+        drawerList.overScrollMode = View.OVER_SCROLL_NEVER
+        drawerList.isVerticalScrollBarEnabled = true
+        holder.addView(drawerList, FrameLayout.LayoutParams(-1, -1))
         holder.addView(search.view, FrameLayout.LayoutParams(-1, -1))
         content.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
 
@@ -837,6 +879,7 @@ class MainActivity : ComponentActivity() {
         val w = drawerCard.layoutParams?.width ?: return
         if (w <= 0) return
         val cols = if (prefs.drawerCols != 0) prefs.drawerCols else maxOf(4, (w - dp(32)) / dp(92))
+        (drawerList.layoutManager as? GridLayoutManager)?.let { if (it.spanCount != cols) it.spanCount = cols }
         val rows = maxOf(2, drawerPager.height / dp(96))
         val per = cols * rows
         if (cols != pageCols || per != perPage) {
@@ -875,7 +918,10 @@ class MainActivity : ComponentActivity() {
         if (q.isEmpty()) {
             filtered = apps
             search.view.visibility = View.GONE
-            drawerPager.visibility = View.VISIBLE
+            val scrollMode = prefs.drawerMode == 1
+            drawerPager.visibility = if (scrollMode) View.GONE else View.VISIBLE
+            drawerList.visibility = if (scrollMode) View.VISIBLE else View.GONE
+            listAdapter.notifyDataSetChanged()
             pageAdapter.notifyDataSetChanged()
             currentPage = 0
             if (drawerPager.currentItem != 0) drawerPager.setCurrentItem(0, false)
@@ -883,6 +929,7 @@ class MainActivity : ComponentActivity() {
         } else {
             filtered = apps.filter { it.label.contains(q, ignoreCase = true) }
             drawerPager.visibility = View.GONE
+            drawerList.visibility = View.GONE
             dotsRow.visibility = View.INVISIBLE
             search.view.visibility = View.VISIBLE
             search.update(q)
@@ -1031,7 +1078,7 @@ class MainActivity : ComponentActivity() {
         }
         val card = FrameLayout(this)
         card.background = rounded(Color.argb(242, 25, 36, 57), 14, Color.argb(50, 255, 255, 255), 1)
-        card.elevation = dp(18).toFloat()
+        card.elevation = dp(60).toFloat()
         card.addView(col, FrameLayout.LayoutParams(-1, -2))
         val w = dp(250)
         card.measure(
@@ -1049,6 +1096,7 @@ class MainActivity : ComponentActivity() {
         p.leftMargin = left
         p.topMargin = top
         root.addView(card, p)
+        card.bringToFront()
         menuCard = card
         menuOpen = true
         updateScrim()
@@ -1168,6 +1216,10 @@ class MainActivity : ComponentActivity() {
             prefs.taskbarAlign = if (prefs.taskbarAlign == 1) 0 else 1
             taskbar.layout()
         })
+        e.add(MenuEntry(R.drawable.ic_nav_home, s(if (prefs.showNav) R.string.menu_hide_nav else R.string.menu_show_nav), false) {
+            prefs.showNav = !prefs.showNav
+            taskbar.layout()
+        })
         e.add(sep())
         e.add(MenuEntry(R.drawable.ic_bell, s(R.string.tab_notifications), false) { openNotifications(0) })
         e.add(MenuEntry(R.drawable.ic_settings, s(R.string.android_settings), false) { openAndroidSettings() })
@@ -1262,7 +1314,7 @@ class MainActivity : ComponentActivity() {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val options = ActivityOptions.makeBasic()
         if (displayId != null) {
-            options.setLaunchDisplayId(displayId)
+            if (Build.VERSION.SDK_INT >= 26) options.setLaunchDisplayId(displayId)
         } else if (freeform || prefs.windowed) {
             // Honoured only on devices with freeform windows enabled; ignored otherwise.
             options.setLaunchBounds(nextBounds())
@@ -1296,6 +1348,7 @@ class MainActivity : ComponentActivity() {
         prefs.recents = recents
         sessionOpened.remove(app.pkg)
         sessionOpened.add(app.pkg)
+        RecentsData.clearDismissed(app.pkg)
         updateActive()
         dismissMenu(false)
         closeDrawer()
@@ -1323,15 +1376,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Alt+Tab / the recent-apps button. */
     internal fun altTab() {
+        if (prefs.recentsMode == 0) {
+            openSwitcher(true)
+            return
+        }
+        openSystemRecents()
+    }
+
+    private fun openSystemRecents() {
         val svc = DroidBridge.accessibility
         if (svc != null) {
             svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
             return
         }
-        // Fallback without the accessibility service: jump to the previously used app.
+        // Without the accessibility service: jump to the previously used app.
         val next = recents.getOrNull(1) ?: recents.getOrNull(0) ?: return
         appMap[next]?.let { launchApp(it) }
+    }
+
+    internal fun openRecents() {
+        if (prefs.recentsMode == 1) openSystemRecents() else openSwitcher(false)
     }
 
     internal fun withAccessibility(feature: String, block: (DroidAccessibilityService) -> Unit) {
@@ -1346,6 +1412,109 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.enable) { _, _ -> safeStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             .show()
+    }
+
+    // ------------------------------------------------------------------ recent apps switcher, navigation, actions
+
+    private val switcherHost = object : RecentsHost {
+        override fun open(item: RecentItem) {
+            closeSwitcher()
+            val app = appMap[item.pkg]
+            if (app != null) {
+                launchApp(app)
+            } else {
+                val i = RecentsData.launchIntent(this@MainActivity, item.pkg)
+                if (i != null) safeStart(i)
+            }
+        }
+
+        override fun close(item: RecentItem) {
+            killApp(item.pkg)
+            RecentsData.markDismissed(item.pkg)
+            recents.remove(item.pkg)
+            prefs.recents = recents
+            sessionOpened.remove(item.pkg)
+            updateActive()
+        }
+
+        override fun closeAll(items: List<RecentItem>) { items.forEach { close(it) } }
+
+        override fun dismiss() { closeSwitcher() }
+    }
+
+    /** Ends the app's background processes. Android does not let a launcher close the app that is in front. */
+    private fun killApp(pkg: String) {
+        try {
+            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).killBackgroundProcesses(pkg)
+        } catch (e: Exception) {
+            // Not permitted on this device.
+        }
+    }
+
+    internal fun openSwitcher(viaAlt: Boolean = false) {
+        val current = switcher
+        if (current != null) {
+            current.move(1)
+            return
+        }
+        dismissMenu(false)
+        closeDrawer()
+        closeNotifications()
+        val items = RecentsData.load(this, prefs)
+        val ui = RecentsUi(this, items, switcherHost, root.width, root.height)
+        ui.view.elevation = dp(90).toFloat()
+        root.addView(ui.view, FrameLayout.LayoutParams(-1, -1))
+        ui.view.bringToFront()
+        switcher = ui
+        switcherView = ui.view
+        switcherViaAlt = viaAlt
+        if (items.size > 1) ui.move(1)
+    }
+
+    internal fun closeSwitcher() {
+        val v = switcherView
+        if (v != null && ::root.isInitialized) root.removeView(v)
+        switcherView = null
+        switcher = null
+        switcherViaAlt = false
+    }
+
+    internal fun systemBack() {
+        if (switcher != null || menuOpen || settings != null || drawerOpen || notifOpen) {
+            onBackPressedDispatcher.onBackPressed()
+            return
+        }
+        val svc = DroidBridge.accessibility
+        if (svc != null) svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        else toast(R.string.toast_need_a11y_back)
+    }
+
+    /** Home: close everything and make sure DroidDesk is in front. */
+    internal fun goHome() {
+        runAction("desktop")
+        val i = Intent(this, MainActivity::class.java)
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        safeStart(i)
+    }
+
+    private fun runAction(name: String) {
+        when (name) {
+            "drawer" -> openDrawer(false)
+            "search" -> openDrawer(true)
+            "files" -> filesWin.show()
+            "settings" -> showSettingsPanel(0)
+            "notifications" -> openNotifications(0)
+            "switcher" -> openSwitcher(false)
+            else -> {
+                // "desktop": close everything that covers it.
+                closeSwitcher()
+                dismissMenu(false)
+                closeDrawer()
+                closeNotifications()
+                closeSettings()
+                updateScrim()
+            }
+        }
     }
 
     // ------------------------------------------------------------------ wallpaper
@@ -1401,25 +1570,60 @@ class MainActivity : ComponentActivity() {
     // ------------------------------------------------------------------ input: keys, right-click, long-press, double-click
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        when (event.keyCode) {
-            KeyEvent.KEYCODE_ESCAPE -> if (event.action == KeyEvent.ACTION_DOWN && (drawerOpen || notifOpen || menuOpen || settings != null)) {
-                dismissMenu(false)
-                closeDrawer()
-                closeNotifications()
-                closeSettings()
-                updateScrim()
+        val code = event.keyCode
+        val sw = switcher
+        if (sw != null) {
+            val altUp = event.action == KeyEvent.ACTION_UP && (code == KeyEvent.KEYCODE_ALT_LEFT || code == KeyEvent.KEYCODE_ALT_RIGHT)
+            if (altUp && switcherViaAlt) {
+                sw.activate()
                 return true
             }
-            // When the accessibility service is on it handles Win / Alt+Tab globally; these are the fallbacks.
-            KeyEvent.KEYCODE_META_LEFT, KeyEvent.KEYCODE_META_RIGHT ->
-                if (event.action == KeyEvent.ACTION_UP && DroidBridge.accessibility == null) {
-                    toggleDrawer()
+            if (sw.onKey(event)) return true
+        }
+        // Win key: a tap opens the drawer; Win + letter are shortcuts (the accessibility service does the same globally).
+        if (code == KeyEvent.KEYCODE_META_LEFT || code == KeyEvent.KEYCODE_META_RIGHT) {
+            if (DroidBridge.accessibility == null) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) metaChordMain = false
+                if (event.action == KeyEvent.ACTION_UP) {
+                    if (!metaChordMain) toggleDrawer()
+                    metaChordMain = false
                     return true
                 }
-            KeyEvent.KEYCODE_TAB -> if (event.isAltPressed && DroidBridge.accessibility == null) {
-                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) altTab()
+            }
+            return super.dispatchKeyEvent(event)
+        }
+        if (DroidBridge.accessibility == null && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && event.isMetaPressed) {
+            val handled = when (code) {
+                KeyEvent.KEYCODE_D -> { runAction("desktop"); true }
+                KeyEvent.KEYCODE_E -> { runAction("files"); true }
+                KeyEvent.KEYCODE_S -> { runAction("search"); true }
+                KeyEvent.KEYCODE_A -> { runAction("notifications"); true }
+                KeyEvent.KEYCODE_I -> { runAction("settings"); true }
+                KeyEvent.KEYCODE_TAB -> { openSwitcher(false); true }
+                else -> false
+            }
+            if (handled) {
+                metaChordMain = true
                 return true
             }
+        }
+        if (code == KeyEvent.KEYCODE_ESCAPE && event.action == KeyEvent.ACTION_DOWN) {
+            if (event.isCtrlPressed) {
+                toggleDrawer()
+                return true
+            }
+            if (drawerOpen || notifOpen || menuOpen || settings != null) {
+                runAction("desktop")
+                return true
+            }
+        }
+        if (code == KeyEvent.KEYCODE_TAB && event.isAltPressed && DroidBridge.accessibility == null) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) altTab()
+            return true
+        }
+        if (code == KeyEvent.KEYCODE_F4 && event.isAltPressed && event.action == KeyEvent.ACTION_DOWN) {
+            runAction("desktop")
+            return true
         }
         return super.dispatchKeyEvent(event)
     }

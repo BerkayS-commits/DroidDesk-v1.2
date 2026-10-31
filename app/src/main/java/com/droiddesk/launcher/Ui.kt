@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.view.PointerIcon
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -72,15 +74,42 @@ fun llp(w: Int, h: Int, left: Int = 0): LinearLayout.LayoutParams {
     return p
 }
 
-/** Hover highlight for mouse users. */
-fun Context.hoverable(v: View, radiusDp: Int = 12) {
+/** Hover for mouse users: highlight, optional grow effect, hand cursor and a focus ring for keyboard users. */
+fun Context.hoverable(v: View, radiusDp: Int = 12, scale: Float = 1f) {
+    if (Build.VERSION.SDK_INT >= 24) v.pointerIcon = PointerIcon.getSystemIcon(this, PointerIcon.TYPE_HAND)
     v.setOnHoverListener { view, e ->
         when (e.action) {
-            MotionEvent.ACTION_HOVER_ENTER -> view.background = rounded(Theme.accentColor.withAlpha(45), radiusDp)
-            MotionEvent.ACTION_HOVER_EXIT -> view.background = null
+            MotionEvent.ACTION_HOVER_ENTER -> {
+                view.background = rounded(Theme.accentColor.withAlpha(45), radiusDp)
+                if (scale > 1f) view.animate().scaleX(scale).scaleY(scale).setDuration(120).start()
+            }
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                view.background = null
+                if (scale > 1f) view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+            }
         }
         false
     }
+    v.setOnFocusChangeListener { view, has ->
+        view.background = if (has) rounded(Theme.accentColor.withAlpha(35), radiusDp, Theme.accentColor, 2) else null
+    }
+}
+
+/** Grow-on-hover only, for views whose background must stay untouched (round tray buttons). */
+fun Context.hoverScale(v: View, scale: Float = 1.12f) {
+    if (Build.VERSION.SDK_INT >= 24) v.pointerIcon = PointerIcon.getSystemIcon(this, PointerIcon.TYPE_HAND)
+    v.setOnHoverListener { view, e ->
+        when (e.action) {
+            MotionEvent.ACTION_HOVER_ENTER -> view.animate().scaleX(scale).scaleY(scale).setDuration(120).start()
+            MotionEvent.ACTION_HOVER_EXIT -> view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+        }
+        false
+    }
+}
+
+/** Tooltips exist from Android 8; older versions simply skip them. */
+fun View.tip(text: CharSequence) {
+    if (Build.VERSION.SDK_INT >= 26) tooltipText = text
 }
 
 fun isOverView(v: View?, x: Float, y: Float): Boolean {

@@ -395,13 +395,15 @@ class SettingsPanel(private val a: MainActivity) {
             a.prefs.taskbarAlign = it
             a.taskbar.layout()
         }
-        chipsRow(
-            s(R.string.set_start_icon),
-            listOf(s(R.string.start_dots), s(R.string.start_ring), s(R.string.start_hex)), a.prefs.startIcon
-        ) {
-            a.prefs.startIcon = it
-            a.taskbar.render()
+        startIconRow()
+        switchRow(s(R.string.set_nav), s(R.string.set_nav_sub), a.prefs.showNav) {
+            a.prefs.showNav = it
+            a.taskbar.layout()
         }
+        chipsRow(
+            s(R.string.set_recents_mode),
+            listOf(s(R.string.recents_dc), s(R.string.recents_sys)), a.prefs.recentsMode
+        ) { a.prefs.recentsMode = it }
         switchRow(s(R.string.set_task_view), s(R.string.set_task_view_sub), a.prefs.showTaskView) {
             a.prefs.showTaskView = it
             a.taskbar.render()
@@ -438,8 +440,46 @@ class SettingsPanel(private val a: MainActivity) {
         hint(R.string.reorder_hint)
     }
 
+    /** App-drawer button icons, shown as previews. */
+    private fun startIconRow() {
+        val b = box()
+        b.addView(a.label(s(R.string.set_start_icon), 14, Theme.text))
+        val hs = HorizontalScrollView(a)
+        hs.isHorizontalScrollBarEnabled = false
+        val row = LinearLayout(a)
+        row.orientation = LinearLayout.HORIZONTAL
+        for (i in StartIcons.res.indices) {
+            val col = LinearLayout(a)
+            col.orientation = LinearLayout.VERTICAL
+            col.gravity = Gravity.CENTER_HORIZONTAL
+            col.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(4))
+            val sel = a.prefs.startIcon == i
+            col.background = a.rounded(if (sel) Theme.accentColor.withAlpha(60) else Theme.panel.withAlpha(200), 12, if (sel) Theme.accentColor else 0, 2)
+            col.addView(a.iconView(StartIcons.res[i], Theme.accentColor), LinearLayout.LayoutParams(a.dp(30), a.dp(30)))
+            col.addView(a.label(s(StartIcons.names[i]), 10, Theme.text), LinearLayout.LayoutParams(-2, a.dp(20)))
+            col.isClickable = true
+            col.setOnClickListener {
+                a.prefs.startIcon = i
+                a.taskbar.render()
+                refreshKeep()
+            }
+            row.addView(col, llp(-2, -2, if (i == 0) 0 else a.dp(6)))
+        }
+        hs.addView(row)
+        val lp = LinearLayout.LayoutParams(-1, -2)
+        lp.topMargin = a.dp(8)
+        b.addView(hs, lp)
+    }
+
     private fun drawerTab() {
         section(R.string.st_drawer)
+        chipsRow(
+            s(R.string.set_drawer_mode),
+            listOf(s(R.string.mode_scroll), s(R.string.mode_pages)), a.prefs.drawerMode
+        ) {
+            a.prefs.drawerMode = it
+            a.applyDrawerPrefs()
+        }
         chipsRow(
             s(R.string.set_drawer_pos),
             listOf(s(R.string.align_left), s(R.string.align_center), s(R.string.align_right)), a.prefs.drawerAlign
@@ -558,6 +598,20 @@ class SettingsPanel(private val a: MainActivity) {
         }
     }
 
+    private val tbPresets = listOf(
+        Triple("Win + Space", KeyEvent.KEYCODE_SPACE, 8),
+        Triple("Alt + Space", KeyEvent.KEYCODE_SPACE, 1),
+        Triple("Ctrl + Alt + T", KeyEvent.KEYCODE_T, 3),
+        Triple("F9", KeyEvent.KEYCODE_F9, 0)
+    )
+
+    private val winPresets = listOf(
+        Triple("Win + ↓", KeyEvent.KEYCODE_DPAD_DOWN, 8),
+        Triple("Alt + ↓", KeyEvent.KEYCODE_DPAD_DOWN, 1),
+        Triple("Ctrl + Alt + ↓", KeyEvent.KEYCODE_DPAD_DOWN, 3),
+        Triple("Alt + F10", KeyEvent.KEYCODE_F10, 1)
+    )
+
     private fun mouseTab() {
         section(R.string.st_mouse)
         chipsRow(
@@ -579,14 +633,22 @@ class SettingsPanel(private val a: MainActivity) {
         ) { a.prefs.dcEmpty = it }
         hint(R.string.mouse_hint)
 
-        section(R.string.sec_window_key)
-        actionRow(s(R.string.set_window_key), describeKey(), R.drawable.ic_maximize) { recordKeyDialog() }
-        actionRow(s(R.string.key_presets), s(R.string.key_presets_sub), R.drawable.ic_tune) { presetKeyDialog() }
-        if (a.prefs.winKey != 0) {
-            actionRow(s(R.string.key_clear), "", R.drawable.ic_close) {
-                a.prefs.winKey = 0
-                a.prefs.winMods = 0
-                refreshKeep()
+        section(R.string.sec_keys)
+        actionRow(s(R.string.set_taskbar_key), describe(a.prefs.tbKey, a.prefs.tbMods), R.drawable.ic_nav_square) {
+            pickKey(R.string.set_taskbar_key, a.prefs.tbKey, a.prefs.tbMods, tbPresets) { c, m ->
+                a.prefs.tbKey = c
+                a.prefs.tbMods = m
+            }
+        }
+        hint(R.string.taskbar_key_hint)
+        switchRow(s(R.string.set_edge), s(R.string.set_edge_sub), a.prefs.tbEdge) { on ->
+            a.prefs.tbEdge = on
+            DroidBridge.accessibility?.let { it.overlays.refreshEdge() }
+        }
+        actionRow(s(R.string.set_window_key), describe(a.prefs.winKey, a.prefs.winMods), R.drawable.ic_maximize) {
+            pickKey(R.string.set_window_key, a.prefs.winKey, a.prefs.winMods, winPresets) { c, m ->
+                a.prefs.winKey = c
+                a.prefs.winMods = m
             }
         }
         hint(R.string.window_key_hint)
@@ -596,6 +658,10 @@ class SettingsPanel(private val a: MainActivity) {
         actionRow(s(R.string.dev_options), s(R.string.dev_options_sub), R.drawable.ic_settings) {
             a.safeStart(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
         }
+
+        section(R.string.sec_shortcuts)
+        val b = box()
+        b.addView(a.label(s(R.string.shortcuts_list), 12, Theme.text))
     }
 
     private fun searchTab() {
@@ -710,42 +776,78 @@ class SettingsPanel(private val a: MainActivity) {
         return sb.toString()
     }
 
-    private fun describeKey(): String = describe(a.prefs.winKey, a.prefs.winMods)
+    private fun modsText(mods: Int): String {
+        val sb = StringBuilder()
+        if ((mods and 8) != 0) sb.append("Win + ")
+        if ((mods and 2) != 0) sb.append("Ctrl + ")
+        if ((mods and 1) != 0) sb.append("Alt + ")
+        if ((mods and 4) != 0) sb.append("Shift + ")
+        return sb.toString()
+    }
 
-    private fun recordKeyDialog() {
+    /**
+     * Key picker screen: shows the combination live while you press it on a physical keyboard, offers
+     * ready-made presets, and can clear the binding.
+     */
+    private fun pickKey(titleRes: Int, code0: Int, mods0: Int, presets: List<Triple<String, Int, Int>>, onSave: (Int, Int) -> Unit) {
+        var code = code0
+        var mods = mods0
+        val col = LinearLayout(a)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(a.dp(20), a.dp(12), a.dp(20), a.dp(4))
+        val display = a.label(describe(code, mods), 22, Theme.accentColor, true)
+        display.gravity = Gravity.CENTER
+        display.background = a.rounded(Theme.panel2, 16)
+        col.addView(display, LinearLayout.LayoutParams(-1, a.dp(76)))
+        val msg = a.label(s(R.string.key_record_msg), 12, Theme.muted)
+        msg.setPadding(a.dp(2), a.dp(10), a.dp(2), a.dp(8))
+        col.addView(msg)
+        val hs = HorizontalScrollView(a)
+        hs.isHorizontalScrollBarEnabled = false
+        val row = LinearLayout(a)
+        row.orientation = LinearLayout.HORIZONTAL
+        presets.forEachIndexed { i, p ->
+            val chip = a.label(p.first, 13, Theme.text, true)
+            chip.gravity = Gravity.CENTER
+            chip.setPadding(a.dp(14), 0, a.dp(14), 0)
+            chip.background = a.rounded(Theme.panel2, 17)
+            chip.setOnClickListener {
+                code = p.second
+                mods = p.third
+                display.text = describe(code, mods)
+            }
+            row.addView(chip, llp(-2, a.dp(34), if (i == 0) 0 else a.dp(6)))
+        }
+        hs.addView(row)
+        col.addView(hs)
         val dlg = AlertDialog.Builder(a)
-            .setTitle(R.string.key_record_title)
-            .setMessage(R.string.key_record_msg)
+            .setTitle(titleRes)
+            .setView(col)
             .setNegativeButton(R.string.cancel, null)
-            .create()
-        dlg.setOnKeyListener { d, keyCode, ev ->
-            if (ev.action == KeyEvent.ACTION_DOWN && !isModifier(keyCode) && keyCode != KeyEvent.KEYCODE_BACK) {
-                a.prefs.winKey = keyCode
-                a.prefs.winMods = modsOf(ev)
-                d.dismiss()
+            .setNeutralButton(R.string.key_clear) { _, _ ->
+                onSave(0, 0)
                 refreshKeep()
+            }
+            .setPositiveButton(R.string.save) { _, _ ->
+                if (code != 0) onSave(code, mods)
+                refreshKeep()
+            }
+            .create()
+        dlg.setOnKeyListener { _, keyCode, ev ->
+            if (ev.action == KeyEvent.ACTION_DOWN && keyCode != KeyEvent.KEYCODE_BACK) {
+                if (isModifier(keyCode)) {
+                    mods = modsOf(ev)
+                    display.text = modsText(mods) + "…"
+                } else {
+                    code = keyCode
+                    mods = modsOf(ev)
+                    display.text = describe(code, mods)
+                }
                 true
             } else {
                 false
             }
         }
         dlg.show()
-    }
-
-    private fun presetKeyDialog() {
-        val presets = listOf(
-            Triple("Win + ↓", KeyEvent.KEYCODE_DPAD_DOWN, 8),
-            Triple("Alt + ↓", KeyEvent.KEYCODE_DPAD_DOWN, 1),
-            Triple("Ctrl + Alt + ↓", KeyEvent.KEYCODE_DPAD_DOWN, 3),
-            Triple("Alt + F10", KeyEvent.KEYCODE_F10, 1)
-        )
-        AlertDialog.Builder(a)
-            .setTitle(R.string.key_presets)
-            .setItems(presets.map { it.first }.toTypedArray()) { _, i ->
-                a.prefs.winKey = presets[i].second
-                a.prefs.winMods = presets[i].third
-                refreshKeep()
-            }
-            .show()
     }
 }

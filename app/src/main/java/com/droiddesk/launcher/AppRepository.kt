@@ -35,10 +35,11 @@ class AppRepository(private val context: Context) {
                 val pkg = ri.activityInfo.packageName
                 val comp = ComponentName(pkg, ri.activityInfo.name)
                 val packed = pack?.icon(comp)
-                val bmp = if (packed != null) {
-                    IconStyler.render(packed, size, IconStyler.ORIGINAL)
-                } else {
-                    IconStyler.render(ri.loadIcon(pm), size, shape)
+                val bmp = try {
+                    if (packed != null) IconStyler.render(packed, size, IconStyler.ORIGINAL)
+                    else IconStyler.render(ri.loadIcon(pm), size, shape)
+                } catch (e: Exception) {
+                    IconStyler.render(ri.loadIcon(pm), size, IconStyler.ORIGINAL)
                 }
                 AppEntry(pkg, ri.loadLabel(pm).toString(), bmp, comp)
             }

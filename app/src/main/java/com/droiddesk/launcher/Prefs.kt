@@ -148,6 +148,14 @@ class Prefs(context: Context) {
     var winKey by intP("winKey", 0)                      // key code, 0 = unset
     var winMods by intP("winMods", 0)                    // 1 alt, 2 ctrl, 4 shift, 8 meta
 
+    // ---- desktop feel
+    var drawerMode by intP("drawerMode", 1)              // 0 pages (horizontal), 1 vertical scroll
+    var showNav by boolP("showNav", false)               // system navigation buttons on the taskbar
+    var recentsMode by intP("recentsMode", 0)            // 0 DroidDesk switcher, 1 system recents
+    var tbKey by intP("tbKey", 0)                        // key that brings the taskbar over any app
+    var tbMods by intP("tbMods", 0)
+    var tbEdge by boolP("tbEdge", false)                 // reveal the taskbar by moving the mouse to the bottom edge
+
     // ---- search
     var searchFiles by boolP("searchFiles", true)
 
