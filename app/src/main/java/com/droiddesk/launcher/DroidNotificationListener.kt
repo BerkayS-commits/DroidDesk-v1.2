@@ -3,17 +3,23 @@ package com.droiddesk.launcher
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
-/** Optional. Only counts active, non-ongoing notifications for the taskbar tray; never reads their content. */
+/**
+ * Optional. Feeds the notification centre in the bottom-right panel. Notifications are read in memory
+ * only to display them; nothing is stored or sent anywhere.
+ */
 class DroidNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
+        DroidBridge.listener = this
         DroidBridge.listenerConnected = true
         refresh()
     }
 
     override fun onListenerDisconnected() {
+        DroidBridge.listener = null
         DroidBridge.listenerConnected = false
         DroidBridge.notificationCount = 0
+        DroidBridge.onNotificationsChanged?.invoke()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) { refresh() }
@@ -25,5 +31,6 @@ class DroidNotificationListener : NotificationListenerService() {
         } catch (e: Exception) {
             0
         }
+        DroidBridge.onNotificationsChanged?.invoke()
     }
 }

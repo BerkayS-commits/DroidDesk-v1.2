@@ -1,17 +1,16 @@
 package com.droiddesk.launcher
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
-import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.app.AlertDialog
-import android.app.DownloadManager
 import android.bluetooth.BluetoothManager
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.res.ColorStateList
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -19,20 +18,16 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Rect
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
-import android.media.AudioManager
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.os.StatFs
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.Display
@@ -50,11 +45,8 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -62,116 +54,80 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
-import java.text.DateFormatSymbols
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import kotlin.math.abs
 
-private class Tool(val iconRes: Int, val labelRes: Int, val color: Int, val action: () -> Unit)
-private class MenuEntry(val iconRes: Int, val label: String, val sub: Boolean, val action: () -> Unit)
-
-/** DroidDesk 1.3 - Windows-inspired Android home launcher. */
+/**
+ * DroidDesk 1.4 - the launcher shell. It owns the root layout, overlays (app drawer, notification centre,
+ * settings, context menus) and input routing, and delegates the rest to Taskbar, DesktopWidgets,
+ * NotificationCenter, SearchResults, SettingsPanel and FilesWindow.
+ */
 class MainActivity : ComponentActivity() {
 
-    private lateinit var prefs: Prefs
+    internal lateinit var prefs: Prefs
     private lateinit var repo: AppRepository
-    private val handler = Handler(Looper.getMainLooper())
+    internal val handler = Handler(Looper.getMainLooper())
 
-    private var accent = Theme.accents[0].color
     private var glassMode = true
     private var gradientMode = "bluepurple"
-    private var taskbarSize = 64
-    private var drawerWidthFrac = .88f
     private var drawerHeightFrac = .68f
-    private var iconSize = 1
-    private var widgetMask = 7
-    private var monthOffset = 0
 
-    private var apps: List<AppEntry> = emptyList()
-    private var appMap: Map<String, AppEntry> = emptyMap()
+    internal var apps: List<AppEntry> = emptyList()
+    internal var appMap: Map<String, AppEntry> = emptyMap()
     private var filtered: List<AppEntry> = emptyList()
     private var shortcuts = mutableListOf<String>()
-    private var pinned = mutableListOf<String>()
+    internal var pinned = mutableListOf<String>()
     private var recents = mutableListOf<String>()
-    private var insets = intArrayOf(0, 0, 0, 0)
+    private val sessionOpened = LinkedHashSet<String>()
+    private var homePackages: Set<String> = emptySet()
+    internal var insets = intArrayOf(0, 0, 0, 0)
+
     private var drawerOpen = false
-    private var quickOpen = false
+    private var notifOpen = false
     private var menuOpen = false
-    private var trayExpanded = true
     private var launchCount = 0
     private var reloadToken = 0
     private var backdropBitmap: Bitmap? = null
     private val backdrops = mutableListOf<GlassBackdrop>()
 
-    private var weather: WeatherInfo? = null
-    private var weatherFetching = false
-    private var lastWeatherAttempt = 0L
-
-    private var lastTouchX = 0f
+    internal var lastTouchX = 0f
     private var lastTouchY = 0f
     private var longPressRunnable: Runnable? = null
+    private var longFired = false
+    private var suppressTap = false
+    private var lastTapTime = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
     private var menuCard: View? = null
     private var menuX = 0f
     private var menuY = 0f
+    private var lastClickPkg = ""
+    private var lastClickTime = 0L
+    private var selectedTile: View? = null
 
     private var pageCols = 4
     private var perPage = 20
     private var currentPage = 0
 
-    private var filesWindow: FrameLayout? = null
-    private var fwX = 0
-    private var fwY = 0
-    private var fwW = 0
-    private var fwH = 0
-    private var fwMax = false
-
-    private lateinit var root: FrameLayout
+    internal lateinit var root: FrameLayout
     private lateinit var gradientView: View
     private lateinit var wallpaperView: ImageView
     private lateinit var desktop: LinearLayout
     private lateinit var desktopArea: FrameLayout
     private lateinit var desktopGrid: GridLayout
     private lateinit var desktopHint: TextView
-    private lateinit var widgetScroll: ScrollView
-    private lateinit var widgetColumn: LinearLayout
-    private lateinit var taskbarCard: FrameLayout
-    private lateinit var centerScroll: HorizontalScrollView
-    private lateinit var taskbarApps: LinearLayout
-    private lateinit var trayBox: LinearLayout
-    private lateinit var trayChevron: ImageView
-    private lateinit var trayWifi: FrameLayout
-    private lateinit var trayBt: FrameLayout
-    private lateinit var trayVol: FrameLayout
-    private lateinit var trayBell: FrameLayout
-    private lateinit var trayBat: FrameLayout
-    private lateinit var trayClock: TextView
     private lateinit var scrim: View
     private lateinit var drawerCard: FrameLayout
     private lateinit var drawerSearch: EditText
     private lateinit var drawerPager: ViewPager2
     private lateinit var dotsRow: LinearLayout
-    private lateinit var emptyLabel: TextView
-    private lateinit var quickCard: FrameLayout
-    private lateinit var volumeSeek: SeekBar
-    private lateinit var brightnessSeek: SeekBar
-    private var startCell: View? = null
 
-    // Widget views (null while the widget is disabled)
-    private var clockTime: TextView? = null
-    private var clockDate: TextView? = null
-    private var weatherIcon: TextView? = null
-    private var weatherTemp: TextView? = null
-    private var weatherDesc: TextView? = null
-    private var calendarTitle: TextView? = null
-    private var calendarGrid: GridLayout? = null
-    private var ringBattery: RingView? = null
-    private var ringStorage: RingView? = null
-    private var ringRam: RingView? = null
-    private var sysBattery: TextView? = null
-    private var sysStorage: TextView? = null
-    private var sysRam: TextView? = null
+    internal lateinit var taskbar: Taskbar
+    internal lateinit var widgets: DesktopWidgets
+    internal lateinit var notif: NotificationCenter
+    private lateinit var search: SearchResults
+    private lateinit var filesWin: FilesWindow
+    private var settings: SettingsPanel? = null
+    internal val currentSettings: SettingsPanel? get() = settings
 
     private val pageAdapter = PageAdapter()
 
@@ -187,9 +143,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val storagePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            FileIndex.invalidate()
+            if (::search.isInitialized) search.onResume()
+        }
+    }
+
     private val ticker = object : Runnable {
         override fun run() {
-            updateTray()
+            tick()
             handler.postDelayed(this, 15_000L)
         }
     }
@@ -215,10 +178,14 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 // A launcher must never finish itself: just close whatever is open.
-                if (menuOpen) dismissMenu() else if (drawerOpen) closeDrawer() else if (quickOpen) closeQuick()
+                if (menuOpen) dismissMenu()
+                else if (settings != null) closeSettings()
+                else if (drawerOpen) closeDrawer()
+                else if (notifOpen) closeNotifications()
             }
         })
         registerPackageReceiver()
+        DroidBridge.onNotificationsChanged = { handler.post { onNotificationsChanged() } }
         reloadApps()
     }
 
@@ -226,7 +193,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         handler.removeCallbacks(ticker)
         ticker.run()
-        syncSeekBars()
+        if (::notif.isInitialized) notif.syncSliders()
+        if (::search.isInitialized) search.onResume()
+        handlePendingActions()
         if (DroidBridge.consumeStartRequest()) openDrawer(false)
     }
 
@@ -239,29 +208,34 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         // Home pressed while DroidDesk is already on screen.
         dismissMenu()
-        closeQuick()
+        closeNotifications()
+        if (settings != null) closeSettings()
+        handlePendingActions()
         if (DroidBridge.consumeStartRequest()) toggleDrawer() else closeDrawer()
     }
 
     override fun onDestroy() {
+        DroidBridge.onNotificationsChanged = null
         handler.removeCallbacksAndMessages(null)
         try { unregisterReceiver(packageReceiver) } catch (e: Exception) { }
         super.onDestroy()
+    }
+
+    /** The accessibility service can ask us to relaunch the app that was in front in a window. */
+    private fun handlePendingActions() {
+        val pkg = DroidBridge.consumeShrink() ?: return
+        val app = appMap[pkg]
+        if (app != null) launchApp(app, null, true)
     }
 
     private fun loadPrefs() {
         shortcuts = prefs.shortcuts
         pinned = prefs.pinned
         recents = prefs.recents
-        accent = Theme.accent(prefs.accent).color
+        Theme.accentColor = Theme.accentFor(prefs.accent, prefs.accentCustom)
         glassMode = prefs.glass
         gradientMode = prefs.gradient
-        taskbarSize = prefs.taskbarSize
-        drawerWidthFrac = prefs.drawerWidth
         drawerHeightFrac = prefs.drawerHeight
-        iconSize = prefs.iconSize
-        widgetMask = prefs.widgetMask
-        weather = if (prefs.weatherCity.isBlank()) null else prefs.loadWeather()
     }
 
     @Suppress("DEPRECATION")
@@ -297,14 +271,18 @@ class MainActivity : ComponentActivity() {
 
     // ------------------------------------------------------------------ apps
 
-    private fun reloadApps() {
+    internal fun reloadApps() {
         val token = ++reloadToken
+        val shape = prefs.iconShape
+        val pack = prefs.iconPack
         Thread {
-            val list = try { repo.load() } catch (e: Exception) { emptyList() }
+            val list = try { repo.load(shape, pack) } catch (e: Exception) { emptyList() }
+            val homes = repo.homePackages()
             runOnUiThread {
                 if (isDestroyed || token != reloadToken) return@runOnUiThread
                 apps = list
                 appMap = list.associateBy { it.pkg }
+                homePackages = homes
                 seedDefaults()
                 refreshAll()
             }
@@ -348,19 +326,122 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshAll() {
         renderDesktop()
-        renderTaskbar()
+        taskbar.render()
         applyFilter()
-        updateTray()
+        tick()
+    }
+
+    private fun tick() {
+        if (!::taskbar.isInitialized) return
+        taskbar.updateTray()
+        widgets.update()
+        updateActive()
+        if (notifOpen && notif.tab == 0) notif.refresh()
+    }
+
+    private fun onNotificationsChanged() {
+        if (!::taskbar.isInitialized) return
+        taskbar.updateTray()
+        if (notifOpen && notif.tab == 0) notif.refresh()
+    }
+
+    /** Which apps get a light on the taskbar: foreground / recently used (usage access) or opened this session. */
+    internal fun updateActive() {
+        if (!::taskbar.isInitialized) return
+        val mode = prefs.activeMode
+        val m = HashMap<String, Int>()
+        if (mode != 0) {
+            if (ActiveApps.hasAccess(this)) {
+                val window = when (mode) {
+                    2 -> 30 * 60_000L
+                    3 -> 120 * 60_000L
+                    else -> 6 * 3_600_000L
+                }
+                for ((p, v) in ActiveApps.compute(this, window)) {
+                    if (mode == 1 && v < 2) continue
+                    m[p] = v
+                }
+            } else {
+                val fg = DroidBridge.foregroundPkg
+                if (fg.isNotEmpty()) m[fg] = 2
+            }
+            if (mode != 1) {
+                for (p in sessionOpened) if (!m.containsKey(p)) m[p] = 1
+            }
+            m.remove(packageName)
+            m.remove("com.android.systemui")
+            for (h in homePackages) m.remove(h)
+        }
+        taskbar.setActive(m)
+    }
+
+    internal fun reorderPinned(order: List<String>) {
+        val reordered = order.filter { pinned.contains(it) }
+        val missing = pinned.filter { !reordered.contains(it) }
+        pinned = (reordered + missing).toMutableList()
+        prefs.pinned = pinned
+        taskbar.render()
+    }
+
+    internal fun resetLayout() {
+        shortcuts.clear()
+        pinned.clear()
+        prefs.shortcuts = shortcuts
+        prefs.pinned = pinned
+        renderDesktop()
+        taskbar.render()
+    }
+
+    // ------------------------------------------------------------------ system state helpers
+
+    internal fun networkConnected(): Boolean {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.getNetworkCapabilities(cm.activeNetwork) != null
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    internal fun bluetoothOn(): Boolean {
+        return try {
+            val bm = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            bm?.adapter?.isEnabled == true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    internal fun batteryPercent(): Int {
+        val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return -1
+        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        return if (level < 0 || scale <= 0) -1 else level * 100 / scale
     }
 
     // ------------------------------------------------------------------ UI construction
 
+    internal fun rebuildUi() {
+        val sp = settings
+        val reopen = sp != null
+        val tab = sp?.tab ?: 0
+        val sy = sp?.scrollY() ?: 0
+        buildUi()
+        if (reopen) showSettingsPanel(tab, sy)
+    }
+
+    internal fun onAppearanceChanged() {
+        loadPrefs()
+        rebuildUi()
+    }
+
     private fun buildUi() {
         drawerOpen = false
-        quickOpen = false
+        notifOpen = false
         menuOpen = false
         menuCard = null
-        filesWindow = null
+        settings = null
+        selectedTile = null
         backdrops.clear()
 
         root = FrameLayout(this)
@@ -373,18 +454,45 @@ class MainActivity : ComponentActivity() {
         root.addView(gradientView, FrameLayout.LayoutParams(-1, -1))
         root.addView(wallpaperView, FrameLayout.LayoutParams(-1, -1))
 
+        taskbar = Taskbar(this)
+        widgets = DesktopWidgets(this)
+        notif = NotificationCenter(this)
+        search = SearchResults(this)
+        filesWin = FilesWindow(this)
+
         desktop = LinearLayout(this)
         desktop.orientation = LinearLayout.VERTICAL
         root.addView(desktop, FrameLayout.LayoutParams(-1, -1))
-        buildDesktopContent()
+
+        val body = LinearLayout(this)
+        body.orientation = LinearLayout.HORIZONTAL
+        desktopArea = FrameLayout(this)
+        desktopGrid = GridLayout(this)
+        desktopGrid.orientation = GridLayout.VERTICAL
+        desktopArea.addView(desktopGrid, FrameLayout.LayoutParams(-2, -2))
+        desktopHint = label(getString(R.string.desktop_empty), 14, Theme.muted)
+        desktopHint.setPadding(dp(8), dp(8), dp(8), dp(8))
+        desktopHint.visibility = View.GONE
+        desktopArea.addView(desktopHint, FrameLayout.LayoutParams(dp(260), -2))
+        desktopArea.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob ->
+            if (b - t != ob - ot) renderDesktop()
+        }
+        body.addView(desktopArea, LinearLayout.LayoutParams(0, -1, 1f))
+        body.addView(widgets.scroll, LinearLayout.LayoutParams(-2, -1))
+        desktop.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        desktop.addView(taskbar.build(), LinearLayout.LayoutParams(-1, dp(prefs.taskbarSize)))
+        widgets.rebuild()
 
         scrim = View(this)
         scrim.setBackgroundColor(0x44000000)
         scrim.visibility = View.GONE
-        scrim.setOnClickListener { dismissMenu(); closeDrawer(); closeQuick() }
+        scrim.setOnClickListener { dismissMenu(); closeDrawer(); closeNotifications(); closeSettings() }
         root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
 
-        buildQuickPanel()
+        val nc = notif.build()
+        nc.elevation = dp(24).toFloat()
+        nc.visibility = View.GONE
+        root.addView(nc, FrameLayout.LayoutParams(-2, -2))
         buildDrawer()
 
         root.setOnApplyWindowInsetsListener { _, i ->
@@ -408,553 +516,15 @@ class MainActivity : ComponentActivity() {
         onRootResized()
     }
 
-    private fun onRootResized() {
-        if (root.width == 0) return
-        val wide = root.width >= dp(720)
-        widgetScroll.visibility = if (wide && widgetMask != 0) View.VISIBLE else View.GONE
-        val wlp = widgetScroll.layoutParams
-        wlp.width = minOf(dp(320), (root.width * .34f).toInt())
-        widgetScroll.layoutParams = wlp
-        trayExpanded = root.width >= dp(640)
-        layoutTray()
+    internal fun onRootResized() {
+        if (!::root.isInitialized || !::taskbar.isInitialized || root.width == 0) return
+        widgets.scroll.visibility = if (root.width >= dp(720) && widgets.hasAny()) View.VISIBLE else View.GONE
+        taskbar.expanded = root.width >= dp(640)
+        taskbar.layout()
         updateOverlayLayout()
-        recomputePages()
         renderDesktop()
         rebuildBackdrop()
-        applyFilesWindow()
-    }
-
-    // ------------------------------------------------------------------ desktop (icons + widgets)
-
-    private fun buildDesktopContent() {
-        val body = LinearLayout(this)
-        body.orientation = LinearLayout.HORIZONTAL
-
-        desktopArea = FrameLayout(this)
-        desktopGrid = GridLayout(this)
-        desktopGrid.orientation = GridLayout.VERTICAL
-        desktopArea.addView(desktopGrid, FrameLayout.LayoutParams(-2, -2))
-        desktopHint = label(getString(R.string.desktop_empty), 14, Theme.muted)
-        desktopHint.setPadding(dp(8), dp(8), dp(8), dp(8))
-        desktopHint.visibility = View.GONE
-        desktopArea.addView(desktopHint, FrameLayout.LayoutParams(dp(260), -2))
-        desktopArea.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob ->
-            if (b - t != ob - ot) renderDesktop()
-        }
-        body.addView(desktopArea, LinearLayout.LayoutParams(0, -1, 1f))
-
-        widgetScroll = ScrollView(this)
-        widgetScroll.isVerticalScrollBarEnabled = false
-        widgetScroll.overScrollMode = View.OVER_SCROLL_NEVER
-        widgetScroll.setOnScrollChangeListener { _, _, _, _, _ -> backdrops.forEach { it.invalidate() } }
-        widgetColumn = LinearLayout(this)
-        widgetColumn.orientation = LinearLayout.VERTICAL
-        widgetScroll.addView(widgetColumn, FrameLayout.LayoutParams(-1, -2))
-        body.addView(widgetScroll, LinearLayout.LayoutParams(dp(300), -1))
-
-        desktop.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
-        buildWidgets()
-        buildTaskbar()
-    }
-
-    private fun hasWidget(bit: Int): Boolean = (widgetMask and bit) != 0
-
-    private fun buildWidgets() {
-        clockTime = null; clockDate = null; weatherIcon = null; weatherTemp = null; weatherDesc = null
-        calendarTitle = null; calendarGrid = null
-        ringBattery = null; ringStorage = null; ringRam = null
-        sysBattery = null; sysStorage = null; sysRam = null
-        widgetColumn.removeAllViews()
-        if (hasWidget(1)) addWidget(buildClockCard())
-        if (hasWidget(2)) addWidget(buildCalendarCard())
-        if (hasWidget(4)) addWidget(buildSystemCard())
-        if (hasWidget(8)) addWidget(buildQuoteCard())
-        updateWidgets()
-    }
-
-    private fun addWidget(card: View) {
-        val p = LinearLayout.LayoutParams(-1, -2)
-        p.bottomMargin = dp(12)
-        widgetColumn.addView(card, p)
-    }
-
-    private fun buildClockCard(): View {
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(dp(18), dp(14), dp(16), dp(14))
-        val left = LinearLayout(this)
-        left.orientation = LinearLayout.VERTICAL
-        val time = label("", 34, Theme.text, true)
-        val date = label("", 14, Theme.muted)
-        left.addView(time)
-        left.addView(date)
-        row.addView(left, LinearLayout.LayoutParams(0, -2, 1f))
-
-        val right = LinearLayout(this)
-        right.orientation = LinearLayout.HORIZONTAL
-        right.gravity = Gravity.CENTER_VERTICAL
-        val wIcon = label("☁", 26, Theme.text)
-        val wCol = LinearLayout(this)
-        wCol.orientation = LinearLayout.VERTICAL
-        wCol.setPadding(dp(6), 0, 0, 0)
-        val wTemp = label("--", 18, Theme.text, true)
-        val wDesc = label("", 10, Theme.muted)
-        wCol.addView(wTemp)
-        wCol.addView(wDesc)
-        right.addView(wIcon)
-        right.addView(wCol)
-        right.isClickable = true
-        right.setOnClickListener { askWeatherCity() }
-        row.addView(right)
-
-        clockTime = time; clockDate = date
-        weatherIcon = wIcon; weatherTemp = wTemp; weatherDesc = wDesc
-        return glassCard(row, 18)
-    }
-
-    private fun buildCalendarCard(): View {
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(14), dp(10), dp(14), dp(12))
-        val head = LinearLayout(this)
-        head.orientation = LinearLayout.HORIZONTAL
-        head.gravity = Gravity.CENTER_VERTICAL
-        val title = label("", 15, Theme.text, true)
-        head.addView(title, LinearLayout.LayoutParams(0, dp(34), 1f))
-        val prev = circleIcon(R.drawable.ic_chevron_right, 0, Theme.muted, 30, 18)
-        prev.rotation = 180f
-        prev.setOnClickListener { monthOffset--; renderCalendar() }
-        val next = circleIcon(R.drawable.ic_chevron_right, 0, Theme.muted, 30, 18)
-        next.setOnClickListener { monthOffset++; renderCalendar() }
-        head.addView(prev, llp(dp(30), dp(30)))
-        head.addView(next, llp(dp(30), dp(30)))
-        col.addView(head)
-        val grid = GridLayout(this)
-        grid.columnCount = 7
-        col.addView(grid, LinearLayout.LayoutParams(-1, -2))
-        calendarTitle = title
-        calendarGrid = grid
-        renderCalendar()
-        return glassCard(col, 18)
-    }
-
-    private fun renderCalendar() {
-        val g = calendarGrid ?: return
-        g.removeAllViews()
-        val cal = Calendar.getInstance()
-        val ty = cal.get(Calendar.YEAR)
-        val tm = cal.get(Calendar.MONTH)
-        val td = cal.get(Calendar.DAY_OF_MONTH)
-        cal.set(Calendar.DAY_OF_MONTH, 1)
-        cal.add(Calendar.MONTH, monthOffset)
-        calendarTitle?.text = SimpleDateFormat("LLLL yyyy", Locale.getDefault()).format(cal.time)
-        val first = cal.firstDayOfWeek
-        val symbols = DateFormatSymbols.getInstance(Locale.getDefault()).shortWeekdays
-        for (i in 0 until 7) {
-            val day = (first - 1 + i) % 7 + 1
-            addCalCell(g, symbols[day].take(1).uppercase(Locale.getDefault()), Theme.muted, false)
-        }
-        val lead = (cal.get(Calendar.DAY_OF_WEEK) - first + 7) % 7
-        for (i in 0 until lead) addCalCell(g, "", Theme.text, false)
-        val days = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-        val sameMonth = cal.get(Calendar.YEAR) == ty && cal.get(Calendar.MONTH) == tm
-        for (d in 1..days) {
-            val isToday = sameMonth && d == td
-            addCalCell(g, d.toString(), if (isToday) Theme.bg else Theme.text, isToday)
-        }
-    }
-
-    private fun addCalCell(g: GridLayout, value: String, color: Int, today: Boolean) {
-        val t = label(value, 12, color, today)
-        t.gravity = Gravity.CENTER
-        if (today) {
-            val d = GradientDrawable()
-            d.shape = GradientDrawable.OVAL
-            d.setColor(accent)
-            t.background = d
-        }
-        val p = GridLayout.LayoutParams()
-        p.width = dp(28)
-        p.height = dp(28)
-        p.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-        p.setGravity(Gravity.CENTER)
-        p.setMargins(0, dp(1), 0, dp(1))
-        g.addView(t, p)
-    }
-
-    private fun buildSystemCard(): View {
-        val col = LinearLayout(this)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(16), dp(12), dp(16), dp(14))
-        col.addView(label(getString(R.string.system_status), 15, Theme.text, true))
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.setPadding(0, dp(8), 0, 0)
-
-        val rb = RingView(this)
-        rb.configure(Color.rgb(74, 222, 128), Theme.panel2, R.drawable.ic_battery)
-        val vb = label("", 12, Theme.text, true)
-        val rs = RingView(this)
-        rs.configure(Color.rgb(129, 140, 248), Theme.panel2, R.drawable.ic_folder)
-        val vs = label("", 12, Theme.text, true)
-        val rr = RingView(this)
-        rr.configure(Color.rgb(45, 212, 191), Theme.panel2, R.drawable.ic_display)
-        val vr = label("", 12, Theme.text, true)
-        row.addView(ringColumn(rb, getString(R.string.sys_battery), vb), LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(ringColumn(rs, getString(R.string.sys_storage), vs), LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(ringColumn(rr, getString(R.string.sys_ram), vr), LinearLayout.LayoutParams(0, -2, 1f))
-        col.addView(row)
-        ringBattery = rb; ringStorage = rs; ringRam = rr
-        sysBattery = vb; sysStorage = vs; sysRam = vr
-        return glassCard(col, 18)
-    }
-
-    private fun ringColumn(ring: RingView, title: String, value: TextView): LinearLayout {
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.gravity = Gravity.CENTER_HORIZONTAL
-        c.addView(ring, LinearLayout.LayoutParams(dp(54), dp(54)))
-        val t = label(title, 11, Theme.muted)
-        t.gravity = Gravity.CENTER
-        c.addView(t, LinearLayout.LayoutParams(-2, dp(22)))
-        value.gravity = Gravity.CENTER
-        c.addView(value, LinearLayout.LayoutParams(-2, dp(18)))
-        return c
-    }
-
-    private fun buildQuoteCard(): View {
-        val quotes = resources.getStringArray(R.array.quotes)
-        val index = Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % maxOf(1, quotes.size)
-        val t = label("“" + quotes[index] + "” ✨", 13, Theme.text)
-        t.setPadding(dp(18), dp(14), dp(18), dp(14))
-        return glassCard(t, 18)
-    }
-
-    private fun updateWidgets() {
-        val now = Date()
-        val time = android.text.format.DateFormat.getTimeFormat(this).format(now)
-        clockTime?.text = time
-        clockDate?.text = SimpleDateFormat("d MMMM EEEE", Locale.getDefault()).format(now)
-        updateWeatherUi()
-        refreshWeather(false)
-        updateSystemWidget()
-    }
-
-    private fun updateWeatherUi() {
-        val icon = weatherIcon ?: return
-        val w = weather
-        if (prefs.weatherCity.isBlank()) {
-            icon.text = "☁"
-            weatherTemp?.text = "--"
-            weatherDesc?.text = getString(R.string.weather_set_city)
-        } else if (w == null) {
-            icon.text = "☁"
-            weatherTemp?.text = "…"
-            weatherDesc?.text = prefs.weatherCity
-        } else {
-            icon.text = WeatherClient.emoji(w.code)
-            weatherTemp?.text = w.tempC.toString() + "°"
-            weatherDesc?.text = getString(WeatherClient.descriptionRes(w.code)) + "\n" + w.city
-        }
-    }
-
-    private fun refreshWeather(force: Boolean) {
-        val city = prefs.weatherCity
-        if (city.isBlank() || weatherFetching || weatherIcon == null) return
-        val now = System.currentTimeMillis()
-        val cached = weather
-        if (!force) {
-            if (cached != null && now - cached.fetchedAt < 30 * 60 * 1000L) return
-            if (now - lastWeatherAttempt < 5 * 60 * 1000L) return
-        }
-        lastWeatherAttempt = now
-        weatherFetching = true
-        val lang = Locale.getDefault().language
-        Thread {
-            val result = WeatherClient.fetch(city, lang)
-            runOnUiThread {
-                weatherFetching = false
-                if (isDestroyed) return@runOnUiThread
-                if (result != null) {
-                    weather = result
-                    prefs.saveWeather(result)
-                }
-                updateWeatherUi()
-            }
-        }.start()
-    }
-
-    private fun askWeatherCity() {
-        val input = EditText(this)
-        input.setSingleLine(true)
-        input.setText(prefs.weatherCity)
-        input.hint = getString(R.string.weather_city_hint)
-        val wrap = LinearLayout(this)
-        wrap.setPadding(dp(20), dp(8), dp(20), 0)
-        wrap.addView(input, LinearLayout.LayoutParams(-1, -2))
-        AlertDialog.Builder(this)
-            .setTitle(R.string.weather_city_title)
-            .setMessage(R.string.weather_city_msg)
-            .setView(wrap)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save) { _, _ ->
-                prefs.weatherCity = input.text.toString().trim()
-                prefs.clearWeather()
-                weather = null
-                lastWeatherAttempt = 0L
-                updateWeatherUi()
-                refreshWeather(true)
-            }
-            .show()
-    }
-
-    private fun updateSystemWidget() {
-        val rb = ringBattery ?: return
-        val pct = batteryPercent()
-        rb.setProgress(if (pct >= 0) pct / 100f else 0f)
-        sysBattery?.text = if (pct >= 0) "$pct%" else "—"
-        try {
-            val st = StatFs(Environment.getDataDirectory().path)
-            val total = st.blockCountLong * st.blockSizeLong
-            val used = total - st.availableBlocksLong * st.blockSizeLong
-            ringStorage?.setProgress(if (total > 0) used.toFloat() / total else 0f)
-            sysStorage?.text = gb(used, 0)
-            val mi = ActivityManager.MemoryInfo()
-            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
-            val ramUsed = mi.totalMem - mi.availMem
-            ringRam?.setProgress(if (mi.totalMem > 0) ramUsed.toFloat() / mi.totalMem else 0f)
-            sysRam?.text = gb(ramUsed, 1)
-        } catch (e: Exception) {
-            // Leave previous values in place.
-        }
-    }
-
-    private fun gb(bytes: Long, decimals: Int): String =
-        String.format(Locale.getDefault(), if (decimals == 0) "%.0f GB" else "%.1f GB", bytes / 1073741824.0)
-
-    private fun iconDims(): IntArray = when (iconSize) {
-        0 -> intArrayOf(70, 92, 34)
-        2 -> intArrayOf(96, 120, 52)
-        else -> intArrayOf(82, 106, 42)
-    } // tile width, tile height, icon (dp)
-
-    private fun renderDesktop() {
-        if (!::desktopGrid.isInitialized) return
-        desktopGrid.removeAllViews()
-        val d = iconDims()
-        val areaH = if (desktopArea.height > 0) desktopArea.height else resources.displayMetrics.heightPixels / 2
-        desktopGrid.rowCount = maxOf(1, areaH / dp(d[1] + 6))
-        val list = shortcuts.mapNotNull { appMap[it] }
-        desktopHint.visibility = if (list.isEmpty() && apps.isNotEmpty()) View.VISIBLE else View.GONE
-        list.forEach { app ->
-            val tile = buildTile(d[2])
-            bindTile(tile, app, true)
-            val p = GridLayout.LayoutParams()
-            p.width = dp(d[0])
-            p.height = dp(d[1])
-            p.setMargins(dp(3), dp(3), dp(3), dp(3))
-            desktopGrid.addView(tile, p)
-        }
-    }
-
-    private fun buildTile(iconDp: Int = 42): LinearLayout {
-        val tile = LinearLayout(this)
-        tile.orientation = LinearLayout.VERTICAL
-        tile.gravity = Gravity.CENTER
-        tile.setPadding(dp(3), dp(5), dp(3), dp(4))
-        tile.isClickable = true
-        tile.isFocusable = true
-        val icon = ImageView(this)
-        icon.scaleType = ImageView.ScaleType.FIT_CENTER
-        tile.addView(icon, LinearLayout.LayoutParams(dp(iconDp), dp(iconDp)))
-        val name = label("", 11, Theme.text)
-        name.gravity = Gravity.CENTER
-        name.maxLines = 2
-        name.ellipsize = TextUtils.TruncateAt.END
-        name.setShadowLayer(4f, 0f, 1f, 0xAA000000.toInt())
-        tile.addView(name, LinearLayout.LayoutParams(-1, dp(34)))
-        hoverable(tile)
-        return tile
-    }
-
-    private fun bindTile(tile: LinearLayout, app: AppEntry, onDesktop: Boolean) {
-        (tile.getChildAt(0) as ImageView).setImageBitmap(app.icon)
-        (tile.getChildAt(1) as TextView).text = app.label
-        tile.setOnClickListener { launchApp(app) }
-        tile.setOnLongClickListener { showAppMenu(app, onDesktop); true }
-        tile.setOnContextClickListener { showAppMenu(app, onDesktop); true } // mouse right-click
-    }
-
-    private fun hoverable(v: View) {
-        v.setOnHoverListener { view, e ->
-            when (e.action) {
-                MotionEvent.ACTION_HOVER_ENTER -> view.background = rounded(accent.withAlpha(40), 12)
-                MotionEvent.ACTION_HOVER_EXIT -> view.background = null
-            }
-            false
-        }
-    }
-
-    // ------------------------------------------------------------------ taskbar + tray
-
-    private fun buildTaskbar() {
-        val bar = FrameLayout(this)
-
-        centerScroll = HorizontalScrollView(this)
-        centerScroll.isHorizontalScrollBarEnabled = false
-        centerScroll.overScrollMode = View.OVER_SCROLL_NEVER
-        taskbarApps = LinearLayout(this)
-        taskbarApps.orientation = LinearLayout.HORIZONTAL
-        taskbarApps.gravity = Gravity.CENTER_VERTICAL
-        centerScroll.addView(taskbarApps, FrameLayout.LayoutParams(-2, -1))
-        bar.addView(centerScroll, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
-
-        trayBox = LinearLayout(this)
-        trayBox.orientation = LinearLayout.HORIZONTAL
-        trayBox.gravity = Gravity.CENTER_VERTICAL
-        trayBox.setPadding(dp(4), 0, dp(12), 0)
-
-        trayChevron = iconView(R.drawable.ic_chevron_up, Theme.muted, 20)
-        trayChevron.setOnClickListener { trayExpanded = !trayExpanded; layoutTray() }
-        trayBox.addView(trayChevron, llp(dp(28), dp(28)))
-
-        trayWifi = circleIcon(R.drawable.ic_wifi, Theme.panel2, Theme.text, 34, 18)
-        trayWifi.setOnClickListener { openInternetPanel() }
-        trayBt = circleIcon(R.drawable.ic_bluetooth, Theme.panel2, Theme.text, 34, 18)
-        trayBt.setOnClickListener { openSettings(Settings.ACTION_BLUETOOTH_SETTINGS) }
-        trayVol = circleIcon(R.drawable.ic_volume, Theme.panel2, Theme.text, 34, 18)
-        trayVol.setOnClickListener { openVolumePanel() }
-        trayBell = circleIcon(R.drawable.ic_bell, Theme.panel2, Theme.text, 34, 18)
-        trayBell.setOnClickListener { onTrayClicked() }
-        trayBat = circleIcon(R.drawable.ic_battery, Theme.panel2, Theme.text, 34, 18)
-        trayBat.setOnClickListener { openSettings(Intent.ACTION_POWER_USAGE_SUMMARY) }
-        trayBox.addView(trayWifi, llp(dp(34), dp(34), dp(6)))
-        trayBox.addView(trayBt, llp(dp(34), dp(34), dp(6)))
-        trayBox.addView(trayVol, llp(dp(34), dp(34), dp(6)))
-        trayBox.addView(trayBell, llp(dp(34), dp(34), dp(6)))
-        trayBox.addView(trayBat, llp(dp(34), dp(34), dp(6)))
-
-        trayClock = label("", 13, Theme.text, true)
-        trayClock.gravity = Gravity.CENTER
-        trayClock.setPadding(dp(10), 0, 0, 0)
-        trayClock.setOnClickListener { toggleQuick() }
-        trayBox.addView(trayClock, llp(-2, -1))
-        bar.addView(trayBox, FrameLayout.LayoutParams(-2, -1, Gravity.END or Gravity.CENTER_VERTICAL))
-
-        taskbarCard = glassCard(bar, 22)
-        desktop.addView(taskbarCard, LinearLayout.LayoutParams(-1, dp(taskbarSize)))
-    }
-
-    /** Keeps the centred app group clear of the tray on both sides, and shows/hides the optional tray icons. */
-    private fun layoutTray() {
-        if (!::trayBox.isInitialized) return
-        val vis = if (trayExpanded) View.VISIBLE else View.GONE
-        trayBt.visibility = vis
-        trayVol.visibility = vis
-        trayChevron.rotation = if (trayExpanded) 180f else 0f
-        trayBox.measure(0, 0)
-        val m = trayBox.measuredWidth + dp(8)
-        val p = centerScroll.layoutParams as FrameLayout.LayoutParams
-        p.leftMargin = m
-        p.rightMargin = m
-        centerScroll.layoutParams = p
-    }
-
-    private fun renderTaskbar() {
-        if (!::taskbarApps.isInitialized) return
-        taskbarApps.removeAllViews()
-
-        val start = FrameLayout(this)
-        start.isClickable = true
-        start.isFocusable = true
-        val logo = ImageView(this)
-        logo.setImageResource(R.drawable.ic_start_logo)
-        start.addView(logo, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
-        start.setOnClickListener { toggleDrawer() }
-        start.contentDescription = getString(R.string.apps)
-        hoverable(start)
-        startCell = start
-        taskbarApps.addView(start, LinearLayout.LayoutParams(dp(48), -1))
-
-        taskbarApps.addView(fixedIcon(R.drawable.ic_search) { openDrawer(true) }, LinearLayout.LayoutParams(dp(48), -1))
-
-        val ordered = pinned + recents.filter { it !in pinned }
-        ordered.forEach { pkg ->
-            val app = appMap[pkg] ?: return@forEach
-            val cell = FrameLayout(this)
-            cell.isClickable = true
-            cell.setOnClickListener { launchApp(app) }
-            cell.setOnLongClickListener { showAppMenu(app, false); true }
-            cell.setOnContextClickListener { showAppMenu(app, false); true }
-            hoverable(cell)
-            val icon = ImageView(this)
-            icon.setImageBitmap(app.icon)
-            icon.setPadding(dp(3), dp(3), dp(3), dp(3))
-            icon.contentDescription = app.label
-            cell.addView(icon, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER))
-            if (pkg !in pinned) {
-                // Small accent bar = recently used (not pinned).
-                val dot = View(this)
-                dot.background = rounded(accent, 2)
-                cell.addView(dot, FrameLayout.LayoutParams(dp(14), dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
-            }
-            taskbarApps.addView(cell, LinearLayout.LayoutParams(dp(48), -1))
-        }
-
-        taskbarApps.addView(fixedIcon(R.drawable.ic_apps) { altTab() }, LinearLayout.LayoutParams(dp(48), -1))
-    }
-
-    private fun fixedIcon(res: Int, action: () -> Unit): FrameLayout {
-        val cell = FrameLayout(this)
-        cell.isClickable = true
-        cell.isFocusable = true
-        cell.addView(iconView(res, Theme.text, 22), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
-        cell.setOnClickListener { action() }
-        hoverable(cell)
-        return cell
-    }
-
-    private fun networkConnected(): Boolean {
-        return try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            cm.getNetworkCapabilities(cm.activeNetwork) != null
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    private fun bluetoothOn(): Boolean {
-        return try {
-            val bm = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-            bm?.adapter?.isEnabled == true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    private fun batteryIntent(): Intent? = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-
-    private fun batteryPercent(): Int {
-        val i = batteryIntent() ?: return -1
-        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-        return if (level < 0 || scale <= 0) -1 else level * 100 / scale
-    }
-
-    private fun updateTray() {
-        if (!::trayClock.isInitialized) return
-        trayClock.text = android.text.format.DateFormat.getTimeFormat(this).format(Date())
-        val online = networkConnected()
-        setCircle(trayWifi, if (online) accent else Theme.panel2, if (online) Theme.bg else Theme.text)
-        val bt = bluetoothOn()
-        setCircle(trayBt, if (bt) accent else Theme.panel2, if (bt) Theme.bg else Theme.text)
-        val n = DroidBridge.notificationCount
-        trayBell.visibility = if (DroidBridge.listenerConnected || n > 0) View.VISIBLE else View.GONE
-        setCircle(trayBell, if (n > 0) accent else Theme.panel2, if (n > 0) Theme.bg else Theme.text)
-        val pct = batteryPercent()
-        setCircle(trayBat, Theme.panel2, if (pct in 0..15) Color.rgb(248, 113, 113) else Theme.text)
-        updateWidgets()
+        filesWin.apply()
     }
 
     // ------------------------------------------------------------------ glass cards / backdrop
@@ -971,7 +541,7 @@ class MainActivity : ComponentActivity() {
         GradientDrawable(GradientDrawable.Orientation.TL_BR, Theme.gradient(gradientMode).colors)
 
     /** Rounded card with an optional blurred-backdrop layer (Android 12+) under a tinted panel. */
-    private fun glassCard(content: View, radiusDp: Int): FrameLayout {
+    internal fun glassCard(content: View, radiusDp: Int): FrameLayout {
         val card = FrameLayout(this)
         val radius = dp(radiusDp).toFloat()
         card.outlineProvider = object : ViewOutlineProvider() {
@@ -992,6 +562,10 @@ class MainActivity : ComponentActivity() {
         return card
     }
 
+    internal fun invalidateBackdrops() { backdrops.forEach { it.invalidate() } }
+
+    internal fun removeBackdropsOf(card: View) { backdrops.removeAll { it.parent === card } }
+
     private fun rebuildBackdrop() {
         if (!blurSupported() || !::root.isInitialized || root.width == 0 || root.height == 0) return
         val s = 0.25f
@@ -1001,171 +575,168 @@ class MainActivity : ComponentActivity() {
         gradientView.draw(c)
         if (wallpaperView.visibility == View.VISIBLE) wallpaperView.draw(c)
         backdropBitmap = bmp
-        backdrops.forEach { it.invalidate() }
+        invalidateBackdrops()
     }
 
-    // ------------------------------------------------------------------ icon helpers
+    // ------------------------------------------------------------------ overlay geometry
 
-    private fun iconView(res: Int, color: Int, @Suppress("UNUSED_PARAMETER") sizeDp: Int): ImageView {
-        val v = ImageView(this)
-        v.scaleType = ImageView.ScaleType.FIT_CENTER
-        v.setImageResource(res)
-        v.setColorFilter(color)
-        return v
+    internal fun bottomOffset(): Int = insets[3] + dp(prefs.taskbarSize) + dp(20)
+
+    internal fun updateOverlayLayout() {
+        if (!::root.isInitialized || !::drawerCard.isInitialized || !::notif.isInitialized || root.width == 0) return
+        val availH = root.height - bottomOffset() - insets[1] - dp(8)
+
+        val dw = minOf((root.width * prefs.drawerWidth).toInt(), root.width - insets[0] - insets[2], dp(720))
+        val dh = minOf((root.height * drawerHeightFrac).toInt(), availH)
+        val grav = when (prefs.drawerAlign) {
+            0 -> Gravity.BOTTOM or Gravity.START
+            2 -> Gravity.BOTTOM or Gravity.END
+            else -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        }
+        val dlp = FrameLayout.LayoutParams(dw, maxOf(dh, dp(260)), grav)
+        dlp.bottomMargin = bottomOffset()
+        if (prefs.drawerAlign == 0) dlp.leftMargin = insets[0] + dp(8)
+        if (prefs.drawerAlign == 2) dlp.rightMargin = insets[2] + dp(8)
+        drawerCard.layoutParams = dlp
+
+        val nw = when (prefs.npWidth) {
+            0 -> dp(340)
+            2 -> dp(480)
+            else -> dp(400)
+        }
+        val nlp = FrameLayout.LayoutParams(minOf(nw, root.width - insets[0] - insets[2] - dp(16)), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END)
+        nlp.bottomMargin = bottomOffset()
+        nlp.rightMargin = insets[2] + dp(8)
+        notif.card.layoutParams = nlp
+        notif.setMaxBody(maxOf(dp(160), minOf(availH - dp(90), dp(520))))
+
+        val sp = settings
+        if (sp != null) {
+            val sw = minOf(root.width - insets[0] - insets[2] - dp(16), dp(780))
+            val slp = FrameLayout.LayoutParams(sw, maxOf(minOf(availH, dp(640)), dp(300)), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            slp.bottomMargin = bottomOffset()
+            sp.card.layoutParams = slp
+        }
+        recomputePages()
     }
 
-    private fun circleIcon(res: Int, bg: Int, tint: Int, @Suppress("UNUSED_PARAMETER") outerDp: Int, innerDp: Int): FrameLayout {
-        val f = FrameLayout(this)
-        val d = GradientDrawable()
-        d.shape = GradientDrawable.OVAL
-        d.setColor(bg)
-        f.background = d
-        val i = iconView(res, tint, innerDp)
-        f.addView(i, FrameLayout.LayoutParams(dp(innerDp), dp(innerDp), Gravity.CENTER))
-        f.tag = i
-        f.isClickable = true
-        f.isFocusable = true
-        return f
+    private fun handleDrawerResize(e: MotionEvent) {
+        val a = e.actionMasked
+        if (a != MotionEvent.ACTION_DOWN && a != MotionEvent.ACTION_MOVE && a != MotionEvent.ACTION_UP) return
+        if (root.height == 0) return
+        val loc = IntArray(2)
+        root.getLocationOnScreen(loc)
+        val topY = e.rawY - loc[1]
+        val bottomEdge = (root.height - bottomOffset()).toFloat()
+        drawerHeightFrac = ((bottomEdge - topY) / root.height).coerceIn(.30f, .82f)
+        updateOverlayLayout()
+        if (a == MotionEvent.ACTION_UP) prefs.drawerHeight = drawerHeightFrac
     }
 
-    private fun setCircle(f: FrameLayout, bg: Int, tint: Int) {
-        (f.background as? GradientDrawable)?.setColor(bg)
-        (f.tag as? ImageView)?.setColorFilter(tint)
+    internal fun applyDrawerPrefs() {
+        drawerHeightFrac = prefs.drawerHeight
+        updateOverlayLayout()
+        pageAdapter.notifyDataSetChanged()
+        rebuildDots()
     }
 
-    private fun llp(w: Int, h: Int, left: Int = 0): LinearLayout.LayoutParams {
-        val p = LinearLayout.LayoutParams(w, h)
-        p.leftMargin = left
-        return p
+    internal fun applyIconPrefs() {
+        renderDesktop()
+        pageAdapter.notifyDataSetChanged()
     }
 
-    // ------------------------------------------------------------------ quick settings panel
+    // ------------------------------------------------------------------ desktop icons
 
-    private fun buildQuickPanel() {
-        val content = LinearLayout(this)
-        content.orientation = LinearLayout.VERTICAL
-        content.setPadding(dp(14), dp(8), dp(14), dp(16))
+    private fun iconDims(): IntArray = when (prefs.iconSize) {
+        0 -> intArrayOf(70, 92, 34)
+        2 -> intArrayOf(96, 120, 52)
+        else -> intArrayOf(82, 106, 42)
+    } // tile width, tile height, icon (dp)
 
-        val grabber = View(this)
-        grabber.background = rounded(Theme.muted.withAlpha(140), 3)
-        val gp = LinearLayout.LayoutParams(dp(40), dp(5))
-        gp.gravity = Gravity.CENTER_HORIZONTAL
-        gp.bottomMargin = dp(12)
-        content.addView(grabber, gp)
-
-        val tools = listOf(
-            Tool(R.drawable.ic_wifi, R.string.tile_internet, Color.rgb(45, 140, 255)) { openInternetPanel() },
-            Tool(R.drawable.ic_bluetooth, R.string.tile_bluetooth, Color.rgb(124, 92, 255)) { openSettings(Settings.ACTION_BLUETOOTH_SETTINGS) },
-            Tool(R.drawable.ic_airplane, R.string.tile_airplane, Color.rgb(100, 116, 139)) { openSettings(Settings.ACTION_AIRPLANE_MODE_SETTINGS) },
-            Tool(R.drawable.ic_display, R.string.tile_display, Color.rgb(139, 92, 246)) { openSettings(Settings.ACTION_DISPLAY_SETTINGS) },
-            Tool(R.drawable.ic_volume, R.string.tile_sound, Color.rgb(249, 115, 22)) { openVolumePanel() },
-            Tool(R.drawable.ic_battery, R.string.tile_battery, Color.rgb(16, 185, 129)) { openSettings(Intent.ACTION_POWER_USAGE_SUMMARY) },
-            Tool(R.drawable.ic_power, R.string.tile_power, Color.rgb(239, 68, 68)) {
-                withAccessibility(getString(R.string.tile_power)) {
-                    it.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)
-                }
-            },
-            Tool(R.drawable.ic_settings, R.string.tile_settings, Color.rgb(100, 116, 139)) { showSettings() }
-        )
-        val grid = GridLayout(this)
-        grid.columnCount = 4
-        tools.forEach { tool ->
-            val tile = LinearLayout(this)
-            tile.orientation = LinearLayout.VERTICAL
-            tile.gravity = Gravity.CENTER_HORIZONTAL
-            tile.setPadding(0, dp(6), 0, dp(6))
-            tile.isClickable = true
-            tile.isFocusable = true
-            tile.setOnClickListener { tool.action() }
-            hoverable(tile)
-            val circle = circleIcon(tool.iconRes, tool.color, Color.WHITE, 52, 26)
-            circle.isClickable = false
-            circle.isFocusable = false
-            tile.addView(circle, LinearLayout.LayoutParams(dp(52), dp(52)))
-            val name = label(getString(tool.labelRes), 11, Theme.text)
-            name.gravity = Gravity.CENTER
-            tile.addView(name, LinearLayout.LayoutParams(-2, dp(26)))
+    internal fun renderDesktop() {
+        if (!::desktopGrid.isInitialized) return
+        desktopGrid.removeAllViews()
+        selectedTile = null
+        val d = iconDims()
+        val areaH = if (desktopArea.height > 0) desktopArea.height else resources.displayMetrics.heightPixels / 2
+        desktopGrid.rowCount = maxOf(1, areaH / dp(d[1] + 6))
+        val list = shortcuts.mapNotNull { appMap[it] }
+        desktopHint.visibility = if (list.isEmpty() && apps.isNotEmpty()) View.VISIBLE else View.GONE
+        list.forEach { app ->
+            val tile = buildTile(d[2])
+            bindTile(tile, app, true)
             val p = GridLayout.LayoutParams()
-            p.width = 0
-            p.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-            grid.addView(tile, p)
+            p.width = dp(d[0])
+            p.height = dp(d[1])
+            p.setMargins(dp(3), dp(3), dp(3), dp(3))
+            desktopGrid.addView(tile, p)
         }
-        content.addView(grid, LinearLayout.LayoutParams(-1, -2))
+    }
 
-        val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        volumeSeek = styledSeek(maxOf(1, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)))
-        volumeSeek.setOnSeekBarChangeListener(seekListener { audio.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0) })
-        val volRow = sliderRow(R.drawable.ic_volume, volumeSeek) {
-            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, 0)
-            syncSeekBars()
+    private fun buildTile(iconDp: Int): LinearLayout {
+        val tile = LinearLayout(this)
+        tile.orientation = LinearLayout.VERTICAL
+        tile.gravity = Gravity.CENTER
+        tile.setPadding(dp(3), dp(5), dp(3), dp(4))
+        tile.isClickable = true
+        tile.isFocusable = true
+        val icon = ImageView(this)
+        icon.scaleType = ImageView.ScaleType.FIT_CENTER
+        tile.addView(icon, LinearLayout.LayoutParams(dp(iconDp), dp(iconDp)))
+        val name = label("", 11, Theme.text)
+        name.gravity = Gravity.CENTER
+        name.maxLines = 2
+        name.ellipsize = TextUtils.TruncateAt.END
+        name.setShadowLayer(4f, 0f, 1f, 0xAA000000.toInt())
+        name.visibility = if (prefs.showLabels) View.VISIBLE else View.GONE
+        tile.addView(name, LinearLayout.LayoutParams(-1, dp(34)))
+        hoverable(tile)
+        return tile
+    }
+
+    private fun bindTile(tile: LinearLayout, app: AppEntry, onDesktop: Boolean) {
+        (tile.getChildAt(0) as ImageView).setImageBitmap(app.icon)
+        (tile.getChildAt(1) as TextView).text = app.label
+        tile.contentDescription = app.label
+        tile.setOnClickListener { onTileClick(tile, app, onDesktop) }
+        tile.setOnLongClickListener { showAppMenu(app, onDesktop); true }
+        tile.setOnContextClickListener { onTileContext(app, onDesktop); true } // mouse right-click
+    }
+
+    /** Single click opens; with "double click to open" the first click only selects (Windows style). */
+    private fun onTileClick(tile: View, app: AppEntry, onDesktop: Boolean) {
+        if (!onDesktop || prefs.iconOpen == 0) {
+            launchApp(app)
+            return
         }
-        content.addView(volRow, llpTop(dp(10)))
-
-        brightnessSeek = styledSeek(100)
-        brightnessSeek.setOnSeekBarChangeListener(seekListener { v ->
-            val wp = window.attributes
-            wp.screenBrightness = maxOf(.05f, v / 100f)
-            window.attributes = wp
-        })
-        content.addView(sliderRow(R.drawable.ic_brightness, brightnessSeek) { }, llpTop(dp(8)))
-
-        quickCard = glassCard(content, 24)
-        quickCard.elevation = dp(24).toFloat()
-        quickCard.visibility = View.GONE
-        root.addView(quickCard, FrameLayout.LayoutParams(-2, -2))
-    }
-
-    private fun llpTop(top: Int): LinearLayout.LayoutParams {
-        val p = LinearLayout.LayoutParams(-1, -2)
-        p.topMargin = top
-        return p
-    }
-
-    private fun styledSeek(maxValue: Int): SeekBar {
-        val s = SeekBar(this)
-        s.max = maxValue
-        s.progressTintList = ColorStateList.valueOf(accent)
-        s.thumbTintList = ColorStateList.valueOf(accent)
-        s.progressBackgroundTintList = ColorStateList.valueOf(Theme.panel2)
-        return s
-    }
-
-    private fun sliderRow(res: Int, seek: SeekBar, onIcon: () -> Unit): LinearLayout {
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.gravity = Gravity.CENTER_VERTICAL
-        val circle = circleIcon(res, Theme.panel2, Theme.text, 44, 22)
-        circle.setOnClickListener { onIcon() }
-        row.addView(circle, LinearLayout.LayoutParams(dp(44), dp(44)))
-        val sp = LinearLayout.LayoutParams(0, -2, 1f)
-        sp.leftMargin = dp(10)
-        row.addView(seek, sp)
-        return row
-    }
-
-    private fun syncSeekBars() {
-        if (!::volumeSeek.isInitialized) return
-        val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        volumeSeek.progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val w = window.attributes.screenBrightness
-        brightnessSeek.progress = if (w >= 0f) {
-            (w * 100).toInt()
+        val now = SystemClock.uptimeMillis()
+        if (lastClickPkg == app.pkg && now - lastClickTime < 400L) {
+            lastClickPkg = ""
+            selectedTile?.background = null
+            selectedTile = null
+            launchApp(app)
         } else {
-            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 178) * 100 / 255
+            lastClickPkg = app.pkg
+            lastClickTime = now
+            selectedTile?.background = null
+            tile.background = rounded(Theme.accentColor.withAlpha(70), 12)
+            selectedTile = tile
         }
     }
 
-    private fun openInternetPanel() {
-        if (Build.VERSION.SDK_INT >= 29) openSettings(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
-        else openSettings(Settings.ACTION_WIFI_SETTINGS)
+    private fun onTileContext(app: AppEntry, onDesktop: Boolean) {
+        when (if (onDesktop) prefs.rcIcon else 0) {
+            1 -> launchApp(app)
+            2 -> appInfo(app)
+            else -> showAppMenu(app, onDesktop)
+        }
     }
 
-    private fun openVolumePanel() {
-        if (Build.VERSION.SDK_INT >= 29) openSettings(Settings.Panel.ACTION_VOLUME)
-        else openSettings(Settings.ACTION_SOUND_SETTINGS)
+    private fun appInfo(app: AppEntry) {
+        safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", app.pkg, null)))
     }
 
-    // ------------------------------------------------------------------ Start menu / app drawer
+    // ------------------------------------------------------------------ app drawer
 
     private inner class PageVH(val grid: GridLayout) : RecyclerView.ViewHolder(grid)
 
@@ -1199,7 +770,7 @@ class MainActivity : ComponentActivity() {
         content.orientation = LinearLayout.VERTICAL
         content.setPadding(dp(16), dp(4), dp(16), dp(8))
 
-        // Grabber: drag up/down to resize the Start menu.
+        // Grabber: drag up/down to resize the drawer.
         val grab = FrameLayout(this)
         val bar = View(this)
         bar.background = rounded(Theme.muted.withAlpha(140), 3)
@@ -1212,9 +783,9 @@ class MainActivity : ComponentActivity() {
         box.gravity = Gravity.CENTER_VERTICAL
         box.setPadding(dp(14), 0, dp(12), 0)
         box.background = rounded(Theme.panel2.withAlpha(200), 16)
-        box.addView(iconView(R.drawable.ic_search, Theme.muted, 20), llp(dp(20), dp(20)))
+        box.addView(iconView(R.drawable.ic_search, Theme.muted), llp(dp(20), dp(20)))
         drawerSearch = EditText(this)
-        drawerSearch.hint = getString(R.string.search_apps)
+        drawerSearch.hint = getString(R.string.search_hint)
         drawerSearch.textSize = 15f
         drawerSearch.setSingleLine(true)
         drawerSearch.imeOptions = EditorInfo.IME_ACTION_GO
@@ -1223,9 +794,9 @@ class MainActivity : ComponentActivity() {
         drawerSearch.background = null
         drawerSearch.setPadding(dp(10), 0, 0, 0)
         drawerSearch.addTextChangedListener(SimpleTextWatcher { applyFilter() })
-        // Enter launches the first match, like the Windows Start menu.
+        // Enter opens the first result (an app, folder or file).
         drawerSearch.setOnEditorActionListener { _, _, _ ->
-            filtered.firstOrNull()?.let { launchApp(it) }
+            if (!search.openFirst()) filtered.firstOrNull()?.let { launchApp(it) }
             true
         }
         box.addView(drawerSearch, LinearLayout.LayoutParams(0, -1, 1f))
@@ -1233,11 +804,7 @@ class MainActivity : ComponentActivity() {
         bp.bottomMargin = dp(8)
         content.addView(box, bp)
 
-        emptyLabel = label(getString(R.string.no_apps), 14, Theme.muted)
-        emptyLabel.visibility = View.GONE
-        emptyLabel.setPadding(dp(4), dp(8), 0, 0)
-        content.addView(emptyLabel)
-
+        val holder = FrameLayout(this)
         drawerPager = ViewPager2(this)
         drawerPager.adapter = pageAdapter
         (drawerPager.getChildAt(0) as? RecyclerView)?.overScrollMode = View.OVER_SCROLL_NEVER
@@ -1250,7 +817,9 @@ class MainActivity : ComponentActivity() {
         drawerPager.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob ->
             if (b - t != ob - ot) recomputePages()
         }
-        content.addView(drawerPager, LinearLayout.LayoutParams(-1, 0, 1f))
+        holder.addView(drawerPager, FrameLayout.LayoutParams(-1, -1))
+        holder.addView(search.view, FrameLayout.LayoutParams(-1, -1))
+        content.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
 
         dotsRow = LinearLayout(this)
         dotsRow.orientation = LinearLayout.HORIZONTAL
@@ -1267,7 +836,7 @@ class MainActivity : ComponentActivity() {
         if (!::drawerPager.isInitialized || !::drawerCard.isInitialized) return
         val w = drawerCard.layoutParams?.width ?: return
         if (w <= 0) return
-        val cols = maxOf(4, (w - dp(32)) / dp(92))
+        val cols = if (prefs.drawerCols != 0) prefs.drawerCols else maxOf(4, (w - dp(32)) / dp(92))
         val rows = maxOf(2, drawerPager.height / dp(96))
         val per = cols * rows
         if (cols != pageCols || per != perPage) {
@@ -1282,7 +851,7 @@ class MainActivity : ComponentActivity() {
         if (!::dotsRow.isInitialized) return
         dotsRow.removeAllViews()
         val n = pageAdapter.itemCount
-        if (n <= 1) {
+        if (n <= 1 || drawerPager.visibility != View.VISIBLE) {
             dotsRow.visibility = View.INVISIBLE
             return
         }
@@ -1295,7 +864,7 @@ class MainActivity : ComponentActivity() {
         for (i in 0 until dotsRow.childCount) {
             val d = GradientDrawable()
             d.shape = GradientDrawable.OVAL
-            d.setColor(if (i == currentPage) accent else Theme.muted.withAlpha(110))
+            d.setColor(if (i == currentPage) Theme.accentColor else Theme.muted.withAlpha(110))
             dotsRow.getChildAt(i).background = d
         }
     }
@@ -1303,59 +872,36 @@ class MainActivity : ComponentActivity() {
     private fun applyFilter() {
         if (!::drawerSearch.isInitialized) return
         val q = drawerSearch.text.toString().trim()
-        filtered = if (q.isEmpty()) apps else apps.filter { it.label.contains(q, ignoreCase = true) }
-        pageAdapter.notifyDataSetChanged()
-        currentPage = 0
-        if (drawerPager.currentItem != 0) drawerPager.setCurrentItem(0, false)
-        emptyLabel.visibility = if (filtered.isEmpty() && apps.isNotEmpty()) View.VISIBLE else View.GONE
-        rebuildDots()
+        if (q.isEmpty()) {
+            filtered = apps
+            search.view.visibility = View.GONE
+            drawerPager.visibility = View.VISIBLE
+            pageAdapter.notifyDataSetChanged()
+            currentPage = 0
+            if (drawerPager.currentItem != 0) drawerPager.setCurrentItem(0, false)
+            rebuildDots()
+        } else {
+            filtered = apps.filter { it.label.contains(q, ignoreCase = true) }
+            drawerPager.visibility = View.GONE
+            dotsRow.visibility = View.INVISIBLE
+            search.view.visibility = View.VISIBLE
+            search.update(q)
+        }
     }
 
-    private fun bottomOffset(): Int = insets[3] + dp(taskbarSize) + dp(20)
-
-    private fun updateOverlayLayout() {
-        if (!::root.isInitialized || !::drawerCard.isInitialized || !::quickCard.isInitialized || root.width == 0) return
-        val availH = root.height - bottomOffset() - insets[1] - dp(8)
-        val dw = minOf((root.width * drawerWidthFrac).toInt(), root.width - insets[0] - insets[2], dp(720))
-        val dh = minOf((root.height * drawerHeightFrac).toInt(), availH)
-        val dlp = FrameLayout.LayoutParams(dw, maxOf(dh, dp(260)), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
-        dlp.bottomMargin = bottomOffset()
-        drawerCard.layoutParams = dlp
-
-        val qw = minOf((root.width * .92f).toInt(), dp(400))
-        val qlp = FrameLayout.LayoutParams(qw, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END)
-        qlp.bottomMargin = bottomOffset()
-        qlp.rightMargin = insets[2] + dp(12)
-        quickCard.layoutParams = qlp
-    }
-
-    private fun handleDrawerResize(e: MotionEvent) {
-        val a = e.actionMasked
-        if (a != MotionEvent.ACTION_DOWN && a != MotionEvent.ACTION_MOVE && a != MotionEvent.ACTION_UP) return
-        if (root.height == 0) return
-        val loc = IntArray(2)
-        root.getLocationOnScreen(loc)
-        val topY = e.rawY - loc[1]
-        val bottomEdge = (root.height - bottomOffset()).toFloat()
-        drawerHeightFrac = ((bottomEdge - topY) / root.height).coerceIn(.30f, .82f)
-        updateOverlayLayout()
-        if (a == MotionEvent.ACTION_UP) prefs.drawerHeight = drawerHeightFrac
-    }
-
-    private fun openDrawer(focusSearch: Boolean) {
+    internal fun openDrawer(focusSearch: Boolean) {
         if (!::drawerCard.isInitialized) return
         if (drawerOpen) {
             if (focusSearch) focusSearchField(true)
             return
         }
         dismissMenu(false)
-        closeQuick()
+        closeNotifications()
         drawerOpen = true
         drawerSearch.setText("")
         applyFilter()
         drawerCard.visibility = View.VISIBLE
         drawerCard.bringToFront()
-        // With a hardware keyboard attached, start typing immediately (without popping the soft keyboard).
         if (focusSearch) {
             focusSearchField(true)
         } else if (resources.configuration.keyboard != Configuration.KEYBOARD_NOKEYS) {
@@ -1372,7 +918,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun closeDrawer() {
+    internal fun closeDrawer() {
         if (!::drawerCard.isInitialized) return
         val wasOpen = drawerOpen
         drawerOpen = false
@@ -1385,38 +931,71 @@ class MainActivity : ComponentActivity() {
         updateScrim()
     }
 
-    private fun toggleDrawer() { if (drawerOpen) closeDrawer() else openDrawer(false) }
+    internal fun toggleDrawer() { if (drawerOpen) closeDrawer() else openDrawer(false) }
 
-    private fun openQuick() {
-        if (quickOpen || !::quickCard.isInitialized) return
+    // ------------------------------------------------------------------ notification centre + settings overlays
+
+    internal fun openNotifications(tab: Int) {
+        if (!::notif.isInitialized) return
         dismissMenu(false)
         closeDrawer()
-        quickOpen = true
-        syncSeekBars()
-        updateTray()
-        quickCard.visibility = View.VISIBLE
-        quickCard.bringToFront()
+        notifOpen = true
+        notif.select(tab)
+        notif.card.visibility = View.VISIBLE
+        notif.card.bringToFront()
         updateScrim()
     }
 
-    private fun closeQuick() {
-        if (!::quickCard.isInitialized) return
-        quickOpen = false
-        quickCard.visibility = View.GONE
+    internal fun closeNotifications() {
+        if (!::notif.isInitialized) return
+        notifOpen = false
+        notif.card.visibility = View.GONE
         updateScrim()
     }
 
-    private fun toggleQuick() { if (quickOpen) closeQuick() else openQuick() }
+    internal fun toggleNotifications(tab: Int) { if (notifOpen) closeNotifications() else openNotifications(tab) }
 
-    private fun updateScrim() {
+    internal fun showSettingsPanel(tab: Int, scrollY: Int = 0) {
+        dismissMenu(false)
+        closeDrawer()
+        closeNotifications()
+        var sp = settings
+        if (sp == null) {
+            sp = SettingsPanel(this)
+            val card = sp.build()
+            card.elevation = dp(26).toFloat()
+            settings = sp
+            root.addView(card, FrameLayout.LayoutParams(-2, -2))
+            updateOverlayLayout()
+            card.bringToFront()
+        }
+        sp.select(tab, scrollY)
+        updateScrim()
+    }
+
+    internal fun closeSettings() {
+        val sp = settings ?: return
+        root.removeView(sp.card)
+        removeBackdropsOf(sp.card)
+        settings = null
+        updateScrim()
+    }
+
+    internal fun updateScrim() {
         if (!::scrim.isInitialized) return
-        scrim.visibility = if (drawerOpen || quickOpen || menuOpen) View.VISIBLE else View.GONE
-        startCell?.background = if (drawerOpen) rounded(accent.withAlpha(70), 12) else null
+        scrim.visibility = if (drawerOpen || notifOpen || menuOpen || settings != null) View.VISIBLE else View.GONE
+        if (::taskbar.isInitialized) {
+            taskbar.startView?.background = if (drawerOpen) rounded(Theme.accentColor.withAlpha(70), 12) else null
+        }
     }
 
     // ------------------------------------------------------------------ context menus
 
-    private fun showMenu(x: Float, y: Float, entries: List<MenuEntry>) {
+    private fun s(res: Int): String = getString(res)
+
+    private fun sep() = MenuEntry(0, "", false) { }
+
+    internal fun showMenu(x: Float, y: Float, entries: List<MenuEntry>) {
         dismissMenu(false)
         menuX = x
         menuY = y
@@ -1438,11 +1017,11 @@ class MainActivity : ComponentActivity() {
             row.setPadding(dp(12), 0, dp(10), 0)
             row.isClickable = true
             row.isFocusable = true
-            if (e.iconRes != 0) row.addView(iconView(e.iconRes, Theme.text, 18), llp(dp(18), dp(18)))
+            if (e.iconRes != 0) row.addView(iconView(e.iconRes, Theme.text), llp(dp(18), dp(18)))
             val t = label(e.label, 13, Theme.text)
             t.setPadding(if (e.iconRes != 0) dp(12) else dp(2), 0, 0, 0)
             row.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
-            if (e.sub) row.addView(iconView(R.drawable.ic_chevron_right, Theme.muted, 16), llp(dp(16), dp(16)))
+            if (e.sub) row.addView(iconView(R.drawable.ic_chevron_right, Theme.muted), llp(dp(16), dp(16)))
             hoverable(row)
             row.setOnClickListener {
                 dismissMenu()
@@ -1451,7 +1030,7 @@ class MainActivity : ComponentActivity() {
             col.addView(row, LinearLayout.LayoutParams(-1, dp(40)))
         }
         val card = FrameLayout(this)
-        card.background = rounded(Color.argb(240, 25, 36, 57), 14, Color.argb(50, 255, 255, 255), 1)
+        card.background = rounded(Color.argb(242, 25, 36, 57), 14, Color.argb(50, 255, 255, 255), 1)
         card.elevation = dp(18).toFloat()
         card.addView(col, FrameLayout.LayoutParams(-1, -2))
         val w = dp(250)
@@ -1475,7 +1054,7 @@ class MainActivity : ComponentActivity() {
         updateScrim()
     }
 
-    private fun dismissMenu(updateUi: Boolean = true) {
+    internal fun dismissMenu(updateUi: Boolean = true) {
         val c = menuCard
         if (c != null) root.removeView(c)
         menuCard = null
@@ -1487,18 +1066,18 @@ class MainActivity : ComponentActivity() {
 
     private fun showDesktopMenu(x: Float, y: Float) {
         val e = mutableListOf<MenuEntry>()
-        e.add(MenuEntry(R.drawable.ic_image, getString(R.string.menu_wallpaper), false) { wallpaperPicker.launch(arrayOf("image/*")) })
-        e.add(MenuEntry(R.drawable.ic_view, getString(R.string.menu_view), true) { showViewMenu() })
-        e.add(MenuEntry(R.drawable.ic_sort, getString(R.string.menu_sort), true) { showSortMenu() })
-        e.add(MenuEntry(R.drawable.ic_refresh, getString(R.string.menu_refresh), false) {
+        e.add(MenuEntry(R.drawable.ic_image, s(R.string.menu_wallpaper), false) { showSettingsPanel(0) })
+        e.add(MenuEntry(R.drawable.ic_view, s(R.string.menu_view), true) { showViewMenu() })
+        e.add(MenuEntry(R.drawable.ic_sort, s(R.string.menu_sort), true) { showSortMenu() })
+        e.add(MenuEntry(R.drawable.ic_refresh, s(R.string.menu_refresh), false) {
             reloadApps()
-            refreshWeather(true)
+            widgets.refreshWeather(true)
         })
-        e.add(MenuEntry(0, "", false) { })
-        e.add(MenuEntry(R.drawable.ic_widgets, getString(R.string.menu_add_widget), true) { showWidgetMenu() })
-        e.add(MenuEntry(R.drawable.ic_apps, getString(R.string.menu_open_drawer), false) { openDrawer(false) })
-        e.add(MenuEntry(R.drawable.ic_folder, getString(R.string.menu_files_window), false) { showFilesWindow() })
-        e.add(MenuEntry(R.drawable.ic_settings, getString(R.string.menu_settings), false) { showSettings() })
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_widgets, s(R.string.menu_add_widget), true) { showWidgetToggleMenu() })
+        e.add(MenuEntry(R.drawable.ic_apps, s(R.string.menu_open_drawer), false) { openDrawer(false) })
+        e.add(MenuEntry(R.drawable.ic_folder, s(R.string.menu_files_window), false) { filesWin.show() })
+        e.add(MenuEntry(R.drawable.ic_tune, s(R.string.droiddesk_settings), false) { showSettingsPanel(0) })
         showMenu(x, y, e)
     }
 
@@ -1506,8 +1085,7 @@ class MainActivity : ComponentActivity() {
         val names = listOf(R.string.view_small, R.string.view_medium, R.string.view_large)
         val e = mutableListOf<MenuEntry>()
         names.forEachIndexed { i, res ->
-            e.add(MenuEntry(0, checked(iconSize == i, getString(res)), false) {
-                iconSize = i
+            e.add(MenuEntry(0, checked(prefs.iconSize == i, s(res)), false) {
                 prefs.iconSize = i
                 renderDesktop()
             })
@@ -1517,8 +1095,8 @@ class MainActivity : ComponentActivity() {
 
     private fun showSortMenu() {
         val e = mutableListOf<MenuEntry>()
-        e.add(MenuEntry(0, getString(R.string.sort_name), false) { sortShortcuts(false) })
-        e.add(MenuEntry(0, getString(R.string.sort_recent), false) { sortShortcuts(true) })
+        e.add(MenuEntry(0, s(R.string.sort_name), false) { sortShortcuts(false) })
+        e.add(MenuEntry(0, s(R.string.sort_recent), false) { sortShortcuts(true) })
         showMenu(menuX, menuY, e)
     }
 
@@ -1528,238 +1106,177 @@ class MainActivity : ComponentActivity() {
         val sorted = if (byRecent) {
             valid.sortedBy { val i = recents.indexOf(it); if (i < 0) Int.MAX_VALUE else i }
         } else {
-            valid.sortedBy { appMap[it]?.label?.lowercase(Locale.getDefault()) ?: "" }
+            valid.sortedBy { appMap[it]?.label?.lowercase(java.util.Locale.getDefault()) ?: "" }
         }
         shortcuts = sorted.toMutableList()
         prefs.shortcuts = shortcuts
         renderDesktop()
     }
 
-    private fun showWidgetMenu() {
+    private fun showWidgetToggleMenu() {
         val items = listOf(
             1 to R.string.widget_clock, 2 to R.string.widget_calendar,
             4 to R.string.widget_system, 8 to R.string.widget_quote
         )
         val e = mutableListOf<MenuEntry>()
         items.forEach { (bit, res) ->
-            e.add(MenuEntry(0, checked(hasWidget(bit), getString(res)), false) {
-                widgetMask = widgetMask xor bit
-                prefs.widgetMask = widgetMask
-                buildWidgets()
+            e.add(MenuEntry(0, checked((prefs.widgetMask and bit) != 0, s(res)), false) {
+                prefs.widgetMask = prefs.widgetMask xor bit
+                widgets.rebuild()
                 onRootResized()
-                showWidgetMenu()
+                showWidgetToggleMenu()
             })
         }
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_close, s(R.string.widget_remove_all), false) {
+            prefs.widgetMask = 0
+            widgets.rebuild()
+            onRootResized()
+        })
+        e.add(MenuEntry(R.drawable.ic_refresh, s(R.string.widget_restore), false) { widgets.restoreDefaults() })
         showMenu(menuX, menuY, e)
     }
 
-    private fun showAppMenu(app: AppEntry, onDesktop: Boolean) {
+    private fun showWidgetItemMenu(bit: Int, x: Float, y: Float) {
         val e = mutableListOf<MenuEntry>()
-        e.add(MenuEntry(0, getString(R.string.menu_open), false) { launchApp(app) })
-        externalDisplayId()?.let { id ->
-            e.add(MenuEntry(0, getString(R.string.menu_open_external), false) { launchApp(app, id) })
-        }
-        val onDesk = shortcuts.contains(app.pkg)
-        e.add(MenuEntry(0, getString(if (onDesk) R.string.menu_remove_shortcut else R.string.menu_add_shortcut), false) { toggleShortcut(app.pkg) })
-        e.add(MenuEntry(0, getString(if (pinned.contains(app.pkg)) R.string.menu_unpin else R.string.menu_pin), false) { togglePin(app.pkg) })
-        if (onDesktop && onDesk) {
-            e.add(MenuEntry(0, getString(R.string.menu_move_left), false) { moveShortcut(app.pkg, -1) })
-            e.add(MenuEntry(0, getString(R.string.menu_move_right), false) { moveShortcut(app.pkg, 1) })
-        }
-        e.add(MenuEntry(0, "", false) { })
-        e.add(MenuEntry(0, getString(R.string.menu_app_info), false) {
-            safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", app.pkg, null)))
+        e.add(MenuEntry(R.drawable.ic_maximize, s(R.string.widget_resize), false) { widgets.setEdit(true) })
+        e.add(MenuEntry(0, s(R.string.size_small), false) { widgets.preset(bit, 220) })
+        e.add(MenuEntry(0, s(R.string.size_medium), false) { widgets.preset(bit, 300) })
+        e.add(MenuEntry(0, s(R.string.size_large), false) { widgets.preset(bit, 420) })
+        e.add(MenuEntry(0, s(R.string.size_reset), false) { widgets.resetSize(bit) })
+        e.add(sep())
+        e.add(MenuEntry(0, s(R.string.move_up), false) { widgets.move(bit, -1) })
+        e.add(MenuEntry(0, s(R.string.move_down), false) { widgets.move(bit, 1) })
+        if (bit == 1) e.add(MenuEntry(R.drawable.ic_widgets, s(R.string.set_weather), false) { widgets.askCity() })
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_close, s(R.string.widget_remove), false) { widgets.remove(bit) })
+        showMenu(x, y, e)
+    }
+
+    private fun showTaskbarMenu(x: Float, y: Float) {
+        val e = mutableListOf<MenuEntry>()
+        e.add(MenuEntry(R.drawable.ic_tune, s(R.string.taskbar_settings), false) { showSettingsPanel(1) })
+        e.add(MenuEntry(0, s(if (prefs.showSearch) R.string.menu_hide_search else R.string.menu_show_search), false) {
+            prefs.showSearch = !prefs.showSearch
+            taskbar.render()
         })
-        e.add(MenuEntry(0, getString(R.string.menu_uninstall), false) {
+        e.add(MenuEntry(0, s(if (prefs.showTaskView) R.string.menu_hide_taskview else R.string.menu_show_taskview), false) {
+            prefs.showTaskView = !prefs.showTaskView
+            taskbar.render()
+        })
+        e.add(MenuEntry(0, s(if (prefs.taskbarAlign == 1) R.string.align_left_action else R.string.align_center_action), false) {
+            prefs.taskbarAlign = if (prefs.taskbarAlign == 1) 0 else 1
+            taskbar.layout()
+        })
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_bell, s(R.string.tab_notifications), false) { openNotifications(0) })
+        e.add(MenuEntry(R.drawable.ic_settings, s(R.string.android_settings), false) { openAndroidSettings() })
+        showMenu(x, y, e)
+    }
+
+    /** Right-click on the start button: quick links, like the Windows "power user" menu. */
+    private fun showStartMenu(x: Float, y: Float) {
+        val e = mutableListOf<MenuEntry>()
+        e.add(MenuEntry(R.drawable.ic_apps, s(R.string.apps), false) { openDrawer(false) })
+        e.add(MenuEntry(R.drawable.ic_search, s(R.string.search_tooltip), false) { openDrawer(true) })
+        e.add(MenuEntry(R.drawable.ic_folder, s(R.string.menu_files_window), false) { filesWin.show() })
+        e.add(MenuEntry(R.drawable.ic_recents, s(R.string.task_view), false) { altTab() })
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_bell, s(R.string.tab_notifications), false) { openNotifications(0) })
+        e.add(MenuEntry(R.drawable.ic_display, s(R.string.tab_quick), false) { openNotifications(1) })
+        e.add(MenuEntry(R.drawable.ic_tune, s(R.string.droiddesk_settings), false) { showSettingsPanel(0) })
+        e.add(MenuEntry(R.drawable.ic_settings, s(R.string.android_settings), false) { openAndroidSettings() })
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_power, s(R.string.tile_power), false) {
+            withAccessibility(s(R.string.tile_power)) {
+                it.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)
+            }
+        })
+        showMenu(x, y, e)
+    }
+
+    private fun showTrayMenu(x: Float, y: Float) {
+        val e = mutableListOf<MenuEntry>()
+        e.add(MenuEntry(R.drawable.ic_wifi, s(R.string.tile_internet), false) { openInternetPanel() })
+        e.add(MenuEntry(R.drawable.ic_bluetooth, s(R.string.tile_bluetooth), false) { openSettings(Settings.ACTION_BLUETOOTH_SETTINGS) })
+        e.add(MenuEntry(R.drawable.ic_volume, s(R.string.tile_sound), false) { openVolumePanel() })
+        e.add(MenuEntry(R.drawable.ic_battery, s(R.string.tile_battery), false) { openSettings(Intent.ACTION_POWER_USAGE_SUMMARY) })
+        e.add(sep())
+        e.add(MenuEntry(R.drawable.ic_bell, s(R.string.tab_notifications), false) { openNotifications(0) })
+        e.add(MenuEntry(R.drawable.ic_clear_all, s(R.string.notif_clear_all), false) { DroidBridge.listener?.cancelAllNotifications() })
+        e.add(MenuEntry(R.drawable.ic_tune, s(R.string.tray_settings), false) { showSettingsPanel(1) })
+        showMenu(x, y, e)
+    }
+
+    internal fun showAppMenu(app: AppEntry, onDesktop: Boolean) {
+        val e = mutableListOf<MenuEntry>()
+        e.add(MenuEntry(0, s(R.string.menu_open), false) { launchApp(app) })
+        externalDisplayId()?.let { id ->
+            e.add(MenuEntry(0, s(R.string.menu_open_external), false) { launchApp(app, id) })
+        }
+        e.add(MenuEntry(0, s(R.string.menu_open_window), false) { launchApp(app, null, true) })
+        val onDesk = shortcuts.contains(app.pkg)
+        e.add(MenuEntry(0, s(if (onDesk) R.string.menu_remove_shortcut else R.string.menu_add_shortcut), false) { toggleShortcut(app.pkg) })
+        e.add(MenuEntry(0, s(if (pinned.contains(app.pkg)) R.string.menu_unpin else R.string.menu_pin), false) { togglePin(app.pkg) })
+        if (onDesktop && onDesk) {
+            e.add(MenuEntry(0, s(R.string.menu_move_left), false) { moveShortcut(app.pkg, -1) })
+            e.add(MenuEntry(0, s(R.string.menu_move_right), false) { moveShortcut(app.pkg, 1) })
+        }
+        e.add(sep())
+        e.add(MenuEntry(0, s(R.string.menu_app_info), false) { appInfo(app) })
+        e.add(MenuEntry(0, s(R.string.menu_uninstall), false) {
             safeStart(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", app.pkg, null)))
         })
         showMenu(lastTouchX, lastTouchY, e)
     }
 
-    // ------------------------------------------------------------------ floating "Files" window
-
-    private class Folder(val labelRes: Int, val color: Int, val action: () -> Unit)
-
-    private fun showFilesWindow() {
-        val existing = filesWindow
-        if (existing != null) {
-            existing.visibility = View.VISIBLE
-            existing.bringToFront()
-            return
-        }
-        closeDrawer()
-        closeQuick()
-
-        val body = LinearLayout(this)
-        body.orientation = LinearLayout.VERTICAL
-
-        val titleBar = LinearLayout(this)
-        titleBar.orientation = LinearLayout.HORIZONTAL
-        titleBar.gravity = Gravity.CENTER_VERTICAL
-        titleBar.setPadding(dp(14), 0, dp(4), 0)
-        titleBar.addView(iconView(R.drawable.ic_folder, accent, 18), llp(dp(18), dp(18)))
-        val tt = label(getString(R.string.files_window_title), 14, Theme.text, true)
-        tt.setPadding(dp(10), 0, 0, 0)
-        titleBar.addView(tt, LinearLayout.LayoutParams(0, -2, 1f))
-        titleBar.addView(winButton(R.drawable.ic_minimize) { filesWindow?.visibility = View.GONE }, llp(dp(40), dp(40)))
-        titleBar.addView(winButton(R.drawable.ic_maximize) { fwMax = !fwMax; applyFilesWindow() }, llp(dp(40), dp(40)))
-        titleBar.addView(winButton(R.drawable.ic_close) { closeFilesWindow() }, llp(dp(40), dp(40)))
-        body.addView(titleBar, LinearLayout.LayoutParams(-1, dp(46)))
-
-        val folders = listOf(
-            Folder(R.string.folder_documents, Color.rgb(59, 130, 246)) {
-                safeStart(Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE))
-            },
-            Folder(R.string.folder_downloads, Color.rgb(16, 185, 129)) {
-                safeStart(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
-            },
-            Folder(R.string.folder_pictures, Color.rgb(139, 92, 246)) {
-                safeStart(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_GALLERY))
-            },
-            Folder(R.string.folder_music, Color.rgb(249, 115, 22)) {
-                safeStart(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC))
-            }
-        )
-        val grid = GridLayout(this)
-        grid.columnCount = 4
-        grid.setPadding(dp(10), dp(8), dp(10), dp(4))
-        folders.forEach { f ->
-            val tile = LinearLayout(this)
-            tile.orientation = LinearLayout.VERTICAL
-            tile.gravity = Gravity.CENTER_HORIZONTAL
-            tile.setPadding(0, dp(8), 0, dp(8))
-            tile.isClickable = true
-            tile.isFocusable = true
-            tile.setOnClickListener { f.action() }
-            hoverable(tile)
-            val circle = circleIcon(R.drawable.ic_folder, f.color, Color.WHITE, 46, 24)
-            circle.isClickable = false
-            circle.isFocusable = false
-            tile.addView(circle, LinearLayout.LayoutParams(dp(46), dp(46)))
-            val name = label(getString(f.labelRes), 11, Theme.text)
-            name.gravity = Gravity.CENTER
-            tile.addView(name, LinearLayout.LayoutParams(-2, dp(24)))
-            val p = GridLayout.LayoutParams()
-            p.width = 0
-            p.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-            grid.addView(tile, p)
-        }
-        body.addView(grid, LinearLayout.LayoutParams(-1, -2))
-        body.addView(View(this), LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val gripRow = LinearLayout(this)
-        gripRow.gravity = Gravity.END or Gravity.CENTER_VERTICAL
-        val grip = label("◢", 16, Theme.muted)
-        grip.setPadding(dp(14), 0, dp(10), dp(2))
-        gripRow.addView(grip, LinearLayout.LayoutParams(-2, -1))
-        body.addView(gripRow, LinearLayout.LayoutParams(-1, dp(30)))
-
-        // Drag by the title bar.
-        var sx = 0f
-        var sy = 0f
-        var ox = 0
-        var oy = 0
-        titleBar.setOnTouchListener { _, ev ->
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    sx = ev.rawX
-                    sy = ev.rawY
-                    ox = fwX
-                    oy = fwY
-                }
-                MotionEvent.ACTION_MOVE -> if (!fwMax) {
-                    fwX = ox + (ev.rawX - sx).toInt()
-                    fwY = oy + (ev.rawY - sy).toInt()
-                    applyFilesWindow()
-                }
-            }
-            true
-        }
-        // Resize by the bottom-right grip.
-        var rx = 0f
-        var ry = 0f
-        var rw = 0
-        var rh = 0
-        grip.setOnTouchListener { _, ev ->
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    rx = ev.rawX
-                    ry = ev.rawY
-                    rw = fwW
-                    rh = fwH
-                }
-                MotionEvent.ACTION_MOVE -> if (!fwMax) {
-                    fwW = maxOf(dp(280), rw + (ev.rawX - rx).toInt())
-                    fwH = maxOf(dp(200), rh + (ev.rawY - ry).toInt())
-                    applyFilesWindow()
-                }
-            }
-            true
-        }
-
-        val card = glassCard(body, 18)
-        card.elevation = dp(20).toFloat()
-        fwMax = false
-        fwW = minOf(dp(440), root.width - dp(24))
-        fwH = dp(300)
-        fwX = maxOf(0, (root.width - fwW) / 2)
-        fwY = insets[1] + dp(40)
-        root.addView(card, FrameLayout.LayoutParams(fwW, fwH))
-        filesWindow = card
-        applyFilesWindow()
+    private fun toggleShortcut(pkg: String) {
+        if (!shortcuts.remove(pkg)) shortcuts.add(pkg)
+        prefs.shortcuts = shortcuts
+        renderDesktop()
     }
 
-    private fun winButton(res: Int, action: () -> Unit): FrameLayout {
-        val f = FrameLayout(this)
-        f.isClickable = true
-        f.isFocusable = true
-        f.addView(iconView(res, Theme.text, 16), FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER))
-        f.setOnClickListener { action() }
-        hoverable(f)
-        return f
+    private fun togglePin(pkg: String) {
+        if (!pinned.remove(pkg)) pinned.add(pkg)
+        prefs.pinned = pinned
+        taskbar.render()
     }
 
-    private fun closeFilesWindow() {
-        val c = filesWindow ?: return
-        root.removeView(c)
-        backdrops.removeAll { it.parent === c }
-        filesWindow = null
-    }
-
-    private fun applyFilesWindow() {
-        val w = filesWindow ?: return
-        if (root.width == 0) return
-        val p = FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.START)
-        if (fwMax) {
-            p.width = root.width - insets[0] - insets[2] - dp(16)
-            p.height = maxOf(dp(200), root.height - insets[1] - bottomOffset() - dp(8))
-            p.leftMargin = insets[0] + dp(8)
-            p.topMargin = insets[1] + dp(8)
-        } else {
-            fwW = fwW.coerceIn(dp(280), maxOf(dp(280), root.width - dp(16)))
-            fwH = fwH.coerceIn(dp(200), maxOf(dp(200), root.height - insets[1] - dp(16)))
-            fwX = fwX.coerceIn(0, maxOf(0, root.width - fwW))
-            fwY = fwY.coerceIn(insets[1], maxOf(insets[1], root.height - fwH - dp(8)))
-            p.width = fwW
-            p.height = fwH
-            p.leftMargin = fwX
-            p.topMargin = fwY
-        }
-        w.layoutParams = p
+    private fun moveShortcut(pkg: String, dir: Int) {
+        val visible = shortcuts.filter { appMap[it] != null }
+        val other = visible.getOrNull(visible.indexOf(pkg) + dir) ?: return
+        val a = shortcuts.indexOf(pkg)
+        val b = shortcuts.indexOf(other)
+        if (a < 0 || b < 0) return
+        shortcuts[a] = other
+        shortcuts[b] = pkg
+        prefs.shortcuts = shortcuts
+        renderDesktop()
     }
 
     // ------------------------------------------------------------------ launching
 
-    private fun launchApp(app: AppEntry, displayId: Int? = null) {
+    internal fun launchApp(app: AppEntry, displayId: Int? = null, freeform: Boolean = false) {
         val intent = packageManager.getLaunchIntentForPackage(app.pkg)
             ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(app.component)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val options = ActivityOptions.makeBasic()
         if (displayId != null) {
             options.setLaunchDisplayId(displayId)
-        } else {
-            // Only honoured when the device supports freeform windows; otherwise ignored.
+        } else if (freeform || prefs.windowed) {
+            // Honoured only on devices with freeform windows enabled; ignored otherwise.
             options.setLaunchBounds(nextBounds())
+            if (freeform) {
+                if (!packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)) {
+                    toast(R.string.toast_no_freeform)
+                }
+                try {
+                    val m = ActivityOptions::class.java.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType)
+                    m.invoke(options, 5) // WINDOWING_MODE_FREEFORM (hidden API, best effort)
+                } catch (e: Throwable) {
+                    // Not available on this Android version.
+                }
+            }
         }
         val started = try {
             startActivity(intent, options.toBundle())
@@ -1777,10 +1294,12 @@ class MainActivity : ComponentActivity() {
         recents.add(0, app.pkg)
         while (recents.size > 6) recents.removeAt(recents.size - 1)
         prefs.recents = recents
-        renderTaskbar()
+        sessionOpened.remove(app.pkg)
+        sessionOpened.add(app.pkg)
+        updateActive()
         dismissMenu(false)
         closeDrawer()
-        closeQuick()
+        closeNotifications()
     }
 
     private fun nextBounds(): Rect {
@@ -1804,34 +1323,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun toggleShortcut(pkg: String) {
-        if (!shortcuts.remove(pkg)) shortcuts.add(pkg)
-        prefs.shortcuts = shortcuts
-        renderDesktop()
-    }
-
-    private fun togglePin(pkg: String) {
-        if (!pinned.remove(pkg)) pinned.add(pkg)
-        prefs.pinned = pinned
-        renderTaskbar()
-    }
-
-    private fun moveShortcut(pkg: String, dir: Int) {
-        val visible = shortcuts.filter { appMap[it] != null }
-        val other = visible.getOrNull(visible.indexOf(pkg) + dir) ?: return
-        val a = shortcuts.indexOf(pkg)
-        val b = shortcuts.indexOf(other)
-        if (a < 0 || b < 0) return
-        shortcuts[a] = other
-        shortcuts[b] = pkg
-        prefs.shortcuts = shortcuts
-        renderDesktop()
-    }
-
-    private fun altTab() {
-        val s = DroidBridge.accessibility
-        if (s != null) {
-            s.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
+    internal fun altTab() {
+        val svc = DroidBridge.accessibility
+        if (svc != null) {
+            svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
             return
         }
         // Fallback without the accessibility service: jump to the previously used app.
@@ -1839,29 +1334,7 @@ class MainActivity : ComponentActivity() {
         appMap[next]?.let { launchApp(it) }
     }
 
-    // ------------------------------------------------------------------ accessibility / notifications
-
-    private fun listenerEnabled(): Boolean {
-        val s = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
-        return s.contains(packageName)
-    }
-
-    private fun onTrayClicked() {
-        if (!listenerEnabled()) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.notif_access_title)
-                .setMessage(R.string.notif_access_msg)
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.enable) { _, _ -> safeStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-                .show()
-        } else {
-            withAccessibility(getString(R.string.tray_notifications)) {
-                it.performGlobalAction(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)
-            }
-        }
-    }
-
-    private fun withAccessibility(feature: String, block: (DroidAccessibilityService) -> Unit) {
+    internal fun withAccessibility(feature: String, block: (DroidAccessibilityService) -> Unit) {
         val service = DroidBridge.accessibility
         if (service != null) {
             block(service)
@@ -1875,118 +1348,12 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    // ------------------------------------------------------------------ settings
-
-    private fun showSettings() {
-        val titles = mutableListOf<String>()
-        val actions = mutableListOf<() -> Unit>()
-        fun add(res: Int, action: () -> Unit) {
-            titles.add(getString(res))
-            actions.add(action)
-        }
-        add(R.string.set_accent) { chooseAccent() }
-        add(R.string.set_gradient) { chooseGradient() }
-        add(R.string.set_wallpaper) { wallpaperPicker.launch(arrayOf("image/*")) }
-        add(R.string.set_glass) {
-            glassMode = !glassMode
-            prefs.glass = glassMode
-            buildUi()
-        }
-        add(R.string.set_taskbar) {
-            sizeDialog(R.string.set_taskbar, taskbarSize.toFloat(), 54f, 82f) { v ->
-                taskbarSize = v.toInt()
-                prefs.taskbarSize = taskbarSize
-                buildUi()
-            }
-        }
-        add(R.string.set_drawer_w) {
-            sizeDialog(R.string.set_drawer_w, drawerWidthFrac, .65f, .98f) { v ->
-                drawerWidthFrac = v
-                prefs.drawerWidth = v
-                updateOverlayLayout()
-            }
-        }
-        add(R.string.set_drawer_h) {
-            sizeDialog(R.string.set_drawer_h, drawerHeightFrac, .30f, .82f) { v ->
-                drawerHeightFrac = v
-                prefs.drawerHeight = v
-                updateOverlayLayout()
-            }
-        }
-        add(R.string.set_weather) { askWeatherCity() }
-        add(R.string.set_clear) {
-            AlertDialog.Builder(this)
-                .setMessage(R.string.confirm_clear)
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.clear) { _, _ ->
-                    shortcuts.clear()
-                    prefs.shortcuts = shortcuts
-                    renderDesktop()
-                }
-                .show()
-        }
-        add(R.string.set_keyboard) { safeStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        add(R.string.set_notifications) { safeStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-        add(R.string.set_default_launcher) { safeStart(Intent(Settings.ACTION_HOME_SETTINGS)) }
-        add(R.string.set_android) { openSettings(Settings.ACTION_SETTINGS) }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.settings_title)
-            .setItems(titles.toTypedArray()) { _, i -> actions[i]() }
-            .show()
-    }
-
-    private fun sizeDialog(titleRes: Int, current: Float, minV: Float, maxV: Float, onSave: (Float) -> Unit) {
-        val seek = SeekBar(this)
-        seek.max = 100
-        seek.progress = (((current - minV) / (maxV - minV)) * 100).toInt().coerceIn(0, 100)
-        val wrap = LinearLayout(this)
-        wrap.orientation = LinearLayout.VERTICAL
-        wrap.setPadding(dp(20), dp(12), dp(20), dp(4))
-        wrap.addView(seek)
-        AlertDialog.Builder(this)
-            .setTitle(titleRes)
-            .setView(wrap)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save) { _, _ -> onSave(minV + (maxV - minV) * seek.progress / 100f) }
-            .show()
-    }
-
-    private fun chooseAccent() {
-        val labels = Theme.accents.map { getString(it.labelRes) }.toTypedArray()
-        val current = Theme.accents.indexOfFirst { it.color == accent }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.set_accent)
-            .setSingleChoiceItems(labels, current) { dialog, which ->
-                val preset = Theme.accents[which]
-                accent = preset.color
-                prefs.accent = preset.key
-                dialog.dismiss()
-                buildUi()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun chooseGradient() {
-        val labels = Theme.gradients.map { getString(it.labelRes) }.toTypedArray()
-        val current = Theme.gradients.indexOfFirst { it.key == gradientMode }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.set_gradient)
-            .setSingleChoiceItems(labels, current) { dialog, which ->
-                gradientMode = Theme.gradients[which].key
-                prefs.gradient = gradientMode
-                prefs.wallpaper = null
-                dialog.dismiss()
-                buildUi()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
     // ------------------------------------------------------------------ wallpaper
 
-    private fun loadWallpaper(uriText: String?, announce: Boolean) {
-        if (uriText == null) {
+    internal fun pickWallpaper() { wallpaperPicker.launch(arrayOf("image/*")) }
+
+    internal fun loadWallpaper(spec: String?, announce: Boolean) {
+        if (spec == null) {
             wallpaperView.setImageDrawable(null)
             wallpaperView.visibility = View.GONE
             rebuildBackdrop()
@@ -1996,7 +1363,11 @@ class MainActivity : ComponentActivity() {
         val w = maxOf(dm.widthPixels, 1)
         val h = maxOf(dm.heightPixels, 1)
         Thread {
-            val bmp = decodeSampled(Uri.parse(uriText), w, h)
+            val bmp = if (spec.startsWith("builtin:")) {
+                Wallpapers.render(spec.removePrefix("builtin:").toIntOrNull() ?: 0, w, h)
+            } else {
+                decodeSampled(Uri.parse(spec), w, h)
+            }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 if (bmp != null) {
@@ -2027,14 +1398,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ------------------------------------------------------------------ input: keys, long-press / right-click
+    // ------------------------------------------------------------------ input: keys, right-click, long-press, double-click
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         when (event.keyCode) {
-            KeyEvent.KEYCODE_ESCAPE -> if (event.action == KeyEvent.ACTION_DOWN && (drawerOpen || quickOpen || menuOpen)) {
+            KeyEvent.KEYCODE_ESCAPE -> if (event.action == KeyEvent.ACTION_DOWN && (drawerOpen || notifOpen || menuOpen || settings != null)) {
                 dismissMenu(false)
                 closeDrawer()
-                closeQuick()
+                closeNotifications()
+                closeSettings()
                 updateScrim()
                 return true
             }
@@ -2052,21 +1424,64 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    private val T_OVERLAY = 0
+    private val T_START = 1
+    private val T_TRAY = 2
+    private val T_APPCELL = 3
+    private val T_TASKBAR = 4
+    private val T_TILE = 5
+    private val T_EMPTY = 6
+
+    /** What is under the pointer. Widgets return 100 + widget bit. */
+    private fun targetAt(x: Float, y: Float): Int {
+        if (!::taskbar.isInitialized || drawerOpen || notifOpen || menuOpen || settings != null) return T_OVERLAY
+        if (isOverView(taskbar.card, x, y)) {
+            return when {
+                taskbar.isOverStart(x, y) -> T_START
+                taskbar.isOverTray(x, y) -> T_TRAY
+                taskbar.isOverApp(x, y) -> T_APPCELL
+                else -> T_TASKBAR
+            }
+        }
+        if (filesWin.isOver(x, y)) return T_OVERLAY
+        val wb = widgets.bitAt(x, y)
+        if (wb != 0) return 100 + wb
+        for (i in 0 until desktopGrid.childCount) {
+            if (isOverView(desktopGrid.getChildAt(i), x, y)) return T_TILE
+        }
+        return T_EMPTY
+    }
+
+    /** Long-press (touch) or right-click (mouse) on bars, widgets and empty desktop. App icons handle their own. */
+    private fun routeContext(x: Float, y: Float): Boolean {
+        val t = targetAt(x, y)
+        when {
+            t == T_START -> showStartMenu(x, y)
+            t == T_TRAY -> showTrayMenu(x, y)
+            t == T_TASKBAR -> showTaskbarMenu(x, y)
+            t >= 100 -> showWidgetItemMenu(t - 100, x, y)
+            t == T_EMPTY -> if (prefs.rcDesktop == 0) showDesktopMenu(x, y)
+            else -> return false
+        }
+        return true
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = ev.rawX
                 lastTouchY = ev.rawY
+                longFired = false
+                suppressTap = false
                 cancelLongPress()
                 if ((ev.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) {
-                    // Mouse right-click on empty desktop.
-                    if (canShowDesktopMenu(ev.rawX, ev.rawY)) {
-                        showDesktopMenu(ev.rawX, ev.rawY)
+                    if (routeContext(ev.rawX, ev.rawY)) {
+                        suppressTap = true
                         return true
                     }
                 } else {
                     val r = Runnable {
-                        if (canShowDesktopMenu(lastTouchX, lastTouchY)) showDesktopMenu(lastTouchX, lastTouchY)
+                        if (routeContext(lastTouchX, lastTouchY)) longFired = true
                     }
                     longPressRunnable = r
                     handler.postDelayed(r, ViewConfiguration.getLongPressTimeout().toLong())
@@ -2076,7 +1491,11 @@ class MainActivity : ComponentActivity() {
                 val slop = ViewConfiguration.get(this).scaledTouchSlop
                 if (abs(ev.rawX - lastTouchX) > slop || abs(ev.rawY - lastTouchY) > slop) cancelLongPress()
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelLongPress()
+            MotionEvent.ACTION_UP -> {
+                cancelLongPress()
+                handleTapUp(ev.rawX, ev.rawY)
+            }
+            MotionEvent.ACTION_CANCEL -> cancelLongPress()
         }
         return super.dispatchTouchEvent(ev)
     }
@@ -2087,60 +1506,66 @@ class MainActivity : ComponentActivity() {
         longPressRunnable = null
     }
 
-    private fun isOver(v: View?, x: Float, y: Float): Boolean {
-        if (v == null || v.visibility != View.VISIBLE) return false
-        val loc = IntArray(2)
-        v.getLocationOnScreen(loc)
-        return x >= loc[0] && x <= loc[0] + v.width && y >= loc[1] && y <= loc[1] + v.height
-    }
-
-    /** The desktop menu opens only on empty desktop: not over icons, widgets, the taskbar or a window. */
-    private fun canShowDesktopMenu(x: Float, y: Float): Boolean {
-        if (!::taskbarCard.isInitialized || drawerOpen || quickOpen || menuOpen) return false
-        if (isOver(taskbarCard, x, y) || isOver(filesWindow, x, y)) return false
-        if (widgetScroll.visibility == View.VISIBLE) {
-            for (i in 0 until widgetColumn.childCount) {
-                if (isOver(widgetColumn.getChildAt(i), x, y)) return false
+    /** Configurable double-click on empty desktop. */
+    private fun handleTapUp(x: Float, y: Float) {
+        if (longFired || suppressTap) {
+            suppressTap = false
+            return
+        }
+        if (prefs.dcEmpty == 0 || targetAt(x, y) != T_EMPTY) {
+            lastTapTime = 0L
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastTapTime < 350L && abs(x - lastTapX) < dp(40) && abs(y - lastTapY) < dp(40)) {
+            lastTapTime = 0L
+            when (prefs.dcEmpty) {
+                1 -> openDrawer(false)
+                2 -> showDesktopMenu(x, y)
+                3 -> openNotifications(0)
             }
+        } else {
+            lastTapTime = now
+            lastTapX = x
+            lastTapY = y
         }
-        for (i in 0 until desktopGrid.childCount) {
-            if (isOver(desktopGrid.getChildAt(i), x, y)) return false
-        }
-        return true
     }
 
     // ------------------------------------------------------------------ small helpers
 
-    private fun toast(res: Int) {
+    internal fun toast(res: Int) {
         Toast.makeText(this, res, Toast.LENGTH_SHORT).show()
     }
 
-    private fun safeStart(intent: Intent) {
+    internal fun safeStart(intent: Intent) {
         try { startActivity(intent) } catch (e: Exception) { toast(R.string.toast_cannot_open) }
     }
 
-    private fun openSettings(action: String) {
+    internal fun openSettings(action: String) {
         try { startActivity(Intent(action)) } catch (e: Exception) { safeStart(Intent(Settings.ACTION_SETTINGS)) }
     }
 
-    private fun Int.withAlpha(alpha: Int): Int =
-        Color.argb(alpha.coerceIn(0, 255), Color.red(this), Color.green(this), Color.blue(this))
+    internal fun openAndroidSettings() { openSettings(Settings.ACTION_SETTINGS) }
 
-    private fun seekListener(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
-        override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-            if (fromUser) onChange(progress)
-        }
-        override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-        override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+    internal fun openInternetPanel() {
+        if (Build.VERSION.SDK_INT >= 29) openSettings(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+        else openSettings(Settings.ACTION_WIFI_SETTINGS)
     }
 
-    private fun label(value: String, size: Int, color: Int, bold: Boolean = false): TextView {
-        val t = TextView(this)
-        t.text = value
-        t.textSize = size.toFloat()
-        t.setTextColor(color)
-        if (bold) t.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        t.gravity = Gravity.CENTER_VERTICAL
-        return t
+    internal fun openVolumePanel() {
+        if (Build.VERSION.SDK_INT >= 29) openSettings(Settings.Panel.ACTION_VOLUME)
+        else openSettings(Settings.ACTION_SOUND_SETTINGS)
+    }
+
+    internal fun requestFileAccess() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+            } catch (e: Exception) {
+                safeStart(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }
+        } else {
+            storagePermission.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
     }
 }

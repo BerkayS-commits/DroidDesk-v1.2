@@ -2,10 +2,28 @@ package com.droiddesk.launcher
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Color
+import kotlin.properties.ReadWriteProperty
+import kotlin.reflect.KProperty
 
 /** Thin wrapper over SharedPreferences. Also migrates the v1.0/v1.1 keys. */
 class Prefs(context: Context) {
     private val sp: SharedPreferences = context.getSharedPreferences("droiddesk", Context.MODE_PRIVATE)
+
+    private fun intP(key: String, def: Int) = object : ReadWriteProperty<Any?, Int> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): Int = sp.getInt(key, def)
+        override fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) { sp.edit().putInt(key, value).apply() }
+    }
+
+    private fun boolP(key: String, def: Boolean) = object : ReadWriteProperty<Any?, Boolean> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): Boolean = sp.getBoolean(key, def)
+        override fun setValue(thisRef: Any?, property: KProperty<*>, value: Boolean) { sp.edit().putBoolean(key, value).apply() }
+    }
+
+    private fun strP(key: String, def: String) = object : ReadWriteProperty<Any?, String> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): String = sp.getString(key, def) ?: def
+        override fun setValue(thisRef: Any?, property: KProperty<*>, value: String) { sp.edit().putString(key, value).apply() }
+    }
 
     private fun readList(key: String): MutableList<String> =
         (sp.getString(key, "") ?: "").split("|").filter { it.isNotBlank() }.toMutableList()
@@ -17,7 +35,6 @@ class Prefs(context: Context) {
     var shortcuts: MutableList<String>
         get() {
             if (!sp.contains("shortcutList")) {
-                // v1.0/v1.1 stored shortcuts as a string set.
                 val legacy = try { sp.getStringSet("shortcuts", null) } catch (e: ClassCastException) { null }
                 if (legacy != null) return legacy.toMutableList()
             }
@@ -44,14 +61,11 @@ class Prefs(context: Context) {
         }
         set(value) { sp.edit().putString("accentKey", value).apply() }
 
-    var glass: Boolean
-        get() = sp.getBoolean("glassMode", true)
-        set(value) { sp.edit().putBoolean("glassMode", value).apply() }
+    var accentCustom by intP("accentCustom", Color.rgb(96, 165, 250))
+    var glass by boolP("glassMode", true)
+    var gradient by strP("gradientMode", "bluepurple")
 
-    var gradient: String
-        get() = sp.getString("gradientMode", "bluepurple") ?: "bluepurple"
-        set(value) { sp.edit().putString("gradientMode", value).apply() }
-
+    /** null = gradient only; "builtin:N" = embedded wallpaper; otherwise a content:// URI. */
     var wallpaper: String?
         get() = sp.getString("wallpaper", null)
         set(value) {
@@ -59,35 +73,85 @@ class Prefs(context: Context) {
             else sp.edit().putString("wallpaper", value).apply()
         }
 
-    var taskbarSize: Int
-        get() = sp.getInt("taskbarSize", 64)
-        set(value) { sp.edit().putInt("taskbarSize", value).apply() }
+    var taskbarSize by intP("taskbarSize", 64)
 
     var drawerWidth: Float
-        get() = sp.getFloat("drawerWidth", .88f).coerceIn(.65f, .98f)
+        get() = sp.getFloat("drawerWidth", .88f).coerceIn(.50f, .98f)
         set(value) { sp.edit().putFloat("drawerWidth", value).apply() }
 
     var drawerHeight: Float
         get() = sp.getFloat("drawerHeight", .68f).coerceIn(.30f, .82f)
         set(value) { sp.edit().putFloat("drawerHeight", value).apply() }
 
-    var iconSize: Int
-        get() = sp.getInt("iconSize", 1).coerceIn(0, 2)
-        set(value) { sp.edit().putInt("iconSize", value).apply() }
+    var iconSize by intP("iconSize", 1)
+    var seeded by boolP("seeded", false)
+    var weatherCity by strP("weatherCity", "")
 
-    /** Bit mask of enabled desktop widgets: 1 clock+weather, 2 calendar, 4 system status, 8 quote. */
-    var widgetMask: Int
-        get() = sp.getInt("widgetMask", 7)
-        set(value) { sp.edit().putInt("widgetMask", value).apply() }
+    // ---- icons
+    /** 0 original, 1 circle, 2 squircle, 3 square, 4 teardrop, 5 leaf, 6 hexagon */
+    var iconShape by intP("iconShape", 0)
+    var iconPack by strP("iconPack", "")
+    var showLabels by boolP("showLabels", true)
 
-    var seeded: Boolean
-        get() = sp.getBoolean("seeded", false)
-        set(value) { sp.edit().putBoolean("seeded", value).apply() }
+    // ---- taskbar
+    var taskbarAlign by intP("taskbarAlign", 1)          // 0 left, 1 centre
+    var showSearch by boolP("showSearch", true)
+    var showTaskView by boolP("showTaskView", true)
+    var startIcon by intP("startIcon", 0)                // 0 dots, 1 ring, 2 hex
+    var activeMode by intP("activeMode", 2)              // 0 off, 1 foreground, 2 recent 30 min, 3 recent 2 h
+    var trayMask by intP("trayMask", 31)                 // 1 wifi, 2 bluetooth, 4 volume, 8 bell, 16 battery
+    var windowed by boolP("windowed", true)
 
-    var weatherCity: String
-        get() = sp.getString("weatherCity", "") ?: ""
-        set(value) { sp.edit().putString("weatherCity", value).apply() }
+    // ---- app drawer
+    var drawerAlign by intP("drawerAlign", 1)            // 0 left, 1 centre, 2 right
+    var drawerCols by intP("drawerCols", 0)              // 0 auto
 
+    // ---- widgets
+    /** Bit mask: 1 clock+weather, 2 calendar, 4 system status, 8 quote. */
+    var widgetMask by intP("widgetMask", 7)
+    var widgetOrder by strP("widgetOrder", "1,2,4,8")
+
+    fun orderedWidgets(): List<Int> {
+        val parsed = widgetOrder.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in listOf(1, 2, 4, 8) }
+        val rest = listOf(1, 2, 4, 8).filter { it !in parsed }
+        return parsed + rest
+    }
+
+    fun moveWidget(bit: Int, dir: Int) {
+        val l = orderedWidgets().toMutableList()
+        val i = l.indexOf(bit)
+        val j = i + dir
+        if (i < 0 || j < 0 || j >= l.size) return
+        l[i] = l[j].also { l[j] = l[i] }
+        widgetOrder = l.joinToString(",")
+    }
+
+    fun widgetW(bit: Int): Int = sp.getInt("ww$bit", 0)
+    fun widgetH(bit: Int): Int = sp.getInt("wh$bit", 0)
+    fun setWidgetSize(bit: Int, wDp: Int, hDp: Int) { sp.edit().putInt("ww$bit", wDp).putInt("wh$bit", hDp).apply() }
+
+    // ---- notification centre
+    var npWidth by intP("npWidth", 1)                    // 0 narrow, 1 normal, 2 wide
+    var npTab by intP("npTab", 0)                        // 0 notifications, 1 quick settings
+    var npGroup by boolP("npGroup", true)
+    var npPreview by boolP("npPreview", true)
+    var npOngoing by boolP("npOngoing", false)
+    var npMax by intP("npMax", 20)
+    var qsMask by intP("qsMask", 255)
+    var qsShape by intP("qsShape", 0)                    // 0 circle, 1 rounded square
+
+    // ---- mouse / keys
+    var rcIcon by intP("rcIcon", 0)                      // 0 menu, 1 open, 2 app info
+    var rcDesktop by intP("rcDesktop", 0)                // 0 menu, 1 nothing
+    var iconOpen by intP("iconOpen", 0)                  // 0 single click, 1 double click
+    var dcEmpty by intP("dcEmpty", 0)                    // 0 nothing, 1 drawer, 2 menu, 3 notifications
+    var winKey by intP("winKey", 0)                      // key code, 0 = unset
+    var winMods by intP("winMods", 0)                    // 1 alt, 2 ctrl, 4 shift, 8 meta
+
+    // ---- search
+    var searchFiles by boolP("searchFiles", true)
+
+    // ---- weather cache
     fun loadWeather(): WeatherInfo? {
         if (!sp.contains("wxTime")) return null
         return WeatherInfo(
