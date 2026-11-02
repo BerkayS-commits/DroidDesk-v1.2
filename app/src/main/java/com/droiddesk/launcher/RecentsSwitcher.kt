@@ -4,16 +4,32 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Outline
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 
-class RecentItem(val pkg: String, val label: String, val icon: Bitmap, val active: Boolean)
+class RecentItem(val pkg: String, val label: String, val icon: Bitmap, val active: Boolean, val thumb: Bitmap? = null)
+
+/**
+ * Small in-memory previews of apps, captured by the accessibility service (Android 11+, opt-in).
+ * Nothing is written to disk or sent anywhere; it is cleared when the process ends.
+ */
+object ThumbCache {
+    private val map = object : LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean = size > 12
+    }
+
+    @Synchronized fun put(pkg: String, bmp: Bitmap) { map[pkg] = bmp }
+    @Synchronized fun get(pkg: String): Bitmap? = map[pkg]
+    @Synchronized fun clear() { map.clear() }
+}
 
 /** Implemented by whoever shows the switcher (the launcher, or the accessibility overlay on top of other apps). */
 interface RecentsHost {
@@ -65,7 +81,7 @@ object RecentsData {
                 val info = pm.getApplicationInfo(pkg, 0)
                 val label = pm.getApplicationLabel(info).toString()
                 val icon = IconStyler.render(pm.getApplicationIcon(pkg), size, prefs.iconShape)
-                out.add(RecentItem(pkg, label, icon, pkg == fg))
+                out.add(RecentItem(pkg, label, icon, pkg == fg, if (prefs.recentsPreviews) ThumbCache.get(pkg) else null))
             } catch (e: Exception) {
                 // App uninstalled or hidden; skip it.
             }
@@ -183,24 +199,51 @@ class RecentsUi(
         t.isFocusable = true
         t.background = ctx.rounded(Theme.panel2.withAlpha(200), 18)
         t.tip(item.label)
-        val icon = ImageView(ctx)
-        icon.setImageBitmap(item.icon)
-        t.addView(icon, FrameLayout.LayoutParams(ctx.dp(58), ctx.dp(58), Gravity.CENTER_HORIZONTAL or Gravity.TOP).also { it.topMargin = ctx.dp(22) })
-        val name = ctx.label(item.label, 12, Theme.text)
-        name.gravity = Gravity.CENTER
-        name.maxLines = 2
-        name.ellipsize = android.text.TextUtils.TruncateAt.END
-        t.addView(name, FrameLayout.LayoutParams(-1, ctx.dp(36), Gravity.BOTTOM).also {
-            it.bottomMargin = ctx.dp(10)
-            it.leftMargin = ctx.dp(6)
-            it.rightMargin = ctx.dp(6)
-        })
+        val thumb = item.thumb
+        if (thumb != null) {
+            // Preview of the app as it was last seen, with its icon and name underneath.
+            val img = ImageView(ctx)
+            img.scaleType = ImageView.ScaleType.CENTER_CROP
+            img.setImageBitmap(thumb)
+            val r = ctx.dp(18).toFloat()
+            img.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height + r.toInt(), r) }
+            }
+            img.clipToOutline = true
+            t.addView(img, FrameLayout.LayoutParams(-1, ctx.dp(sizeDp - 40), Gravity.TOP))
+            val small = ImageView(ctx)
+            small.setImageBitmap(item.icon)
+            t.addView(small, FrameLayout.LayoutParams(ctx.dp(26), ctx.dp(26), Gravity.BOTTOM or Gravity.START).also {
+                it.leftMargin = ctx.dp(8)
+                it.bottomMargin = ctx.dp(7)
+            })
+            val name = ctx.label(item.label, 11, Theme.text)
+            name.maxLines = 1
+            name.ellipsize = android.text.TextUtils.TruncateAt.END
+            t.addView(name, FrameLayout.LayoutParams(-1, ctx.dp(34), Gravity.BOTTOM).also {
+                it.leftMargin = ctx.dp(40)
+                it.rightMargin = ctx.dp(6)
+            })
+        } else {
+            val icon = ImageView(ctx)
+            icon.setImageBitmap(item.icon)
+            t.addView(icon, FrameLayout.LayoutParams(ctx.dp(58), ctx.dp(58), Gravity.CENTER_HORIZONTAL or Gravity.TOP).also { it.topMargin = ctx.dp(22) })
+            val name = ctx.label(item.label, 12, Theme.text)
+            name.gravity = Gravity.CENTER
+            name.maxLines = 2
+            name.ellipsize = android.text.TextUtils.TruncateAt.END
+            t.addView(name, FrameLayout.LayoutParams(-1, ctx.dp(36), Gravity.BOTTOM).also {
+                it.bottomMargin = ctx.dp(10)
+                it.leftMargin = ctx.dp(6)
+                it.rightMargin = ctx.dp(6)
+            })
+        }
         if (item.active) {
             val bar = View(ctx)
             bar.background = ctx.rounded(accent, 2)
-            t.addView(bar, FrameLayout.LayoutParams(ctx.dp(22), ctx.dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).also { it.bottomMargin = ctx.dp(4) })
+            t.addView(bar, FrameLayout.LayoutParams(ctx.dp(22), ctx.dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).also { it.bottomMargin = ctx.dp(3) })
         }
-        val x = ctx.circleIcon(R.drawable.ic_close, Color.argb(120, 0, 0, 0), Theme.text, 12)
+        val x = ctx.circleIcon(R.drawable.ic_close, Color.argb(150, 0, 0, 0), Theme.text, 12)
         x.setOnClickListener {
             host.close(item)
             items = items.filter { it !== item }

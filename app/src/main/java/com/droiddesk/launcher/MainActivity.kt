@@ -136,6 +136,42 @@ class MainActivity : ComponentActivity() {
     private var settings: SettingsPanel? = null
     internal val currentSettings: SettingsPanel? get() = settings
 
+    /** "Keep screen on" quick tile. */
+    internal var keepAwake: Boolean
+        get() = prefs.keepAwake
+        set(v) {
+            prefs.keepAwake = v
+            applyKeepAwake()
+        }
+
+    private fun applyKeepAwake() {
+        if (prefs.keepAwake) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    internal val taskbarHost: TaskbarHost = object : TaskbarHost {
+        override val ctx: Context get() = this@MainActivity
+        override val prefs: Prefs get() = this@MainActivity.prefs
+        override val handler: Handler get() = this@MainActivity.handler
+        override fun pinnedList(): MutableList<String> = this@MainActivity.pinned
+        override fun entry(pkg: String): AppEntry? = appMap[pkg]
+        override fun glass(content: View, radiusDp: Int): FrameLayout = glassCard(content, radiusDp)
+        override fun launch(app: AppEntry) { launchApp(app) }
+        override fun appMenu(app: AppEntry) { showAppMenu(app, false) }
+        override fun reorderPinned(order: List<String>) { this@MainActivity.reorderPinned(order) }
+        override fun toggleDrawer() { this@MainActivity.toggleDrawer() }
+        override fun openSearch() { openDrawer(true) }
+        override fun systemBack() { this@MainActivity.systemBack() }
+        override fun goHome() { this@MainActivity.goHome() }
+        override fun openRecents() { this@MainActivity.openRecents() }
+        override fun openInternet() { openInternetPanel() }
+        override fun openBluetooth() { openSettings(Settings.ACTION_BLUETOOTH_SETTINGS) }
+        override fun openVolume() { openVolumePanel() }
+        override fun openPower() { openSettings(Intent.ACTION_POWER_USAGE_SUMMARY) }
+        override fun toggleNotifications(tab: Int) { this@MainActivity.toggleNotifications(tab) }
+        override fun onRendered() { updateScrim() }
+    }
+
     private val pageAdapter = PageAdapter()
     private val listAdapter = AppListAdapter()
 
@@ -194,12 +230,15 @@ class MainActivity : ComponentActivity() {
             }
         })
         registerPackageReceiver()
+        applyKeepAwake()
+        QuickSettings.registerTorch(this) { if (::notif.isInitialized && notifOpen) notif.refreshState() }
         DroidBridge.onNotificationsChanged = { handler.post { onNotificationsChanged() } }
         reloadApps()
     }
 
     override fun onResume() {
         super.onResume()
+        DroidBridge.launcherVisible = true
         handler.removeCallbacks(ticker)
         ticker.run()
         if (::notif.isInitialized) notif.syncSliders()
@@ -209,6 +248,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        DroidBridge.launcherVisible = false
         handler.removeCallbacks(ticker)
         super.onPause()
     }
@@ -254,11 +294,7 @@ class MainActivity : ComponentActivity() {
     private fun setupWindow() {
         // targetSdk 35 forces edge-to-edge on Android 15; do the same on older versions so layout is consistent.
         if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.setSystemBarsAppearance(
-                0,
-                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            )
+            try { window.setDecorFitsSystemWindows(false) } catch (e: Throwable) { }
         } else {
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
                 View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
@@ -267,6 +303,22 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+    }
+
+    /**
+     * Light/dark system bar icons. This must run AFTER setContentView: before that the decor view does not
+     * exist yet and Android 11+ throws a NullPointerException inside PhoneWindow.getInsetsController().
+     */
+    private fun applySystemBars() {
+        if (Build.VERSION.SDK_INT < 30) return
+        try {
+            window.decorView.windowInsetsController?.setSystemBarsAppearance(
+                0,
+                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            )
+        } catch (e: Throwable) {
+            // Cosmetic only; never let it stop the launcher from starting.
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -349,6 +401,7 @@ class MainActivity : ComponentActivity() {
         widgets.update()
         updateActive()
         if (notifOpen && notif.tab == 0) notif.refresh()
+        if (notifOpen && notif.tab == 1) notif.refreshState()
     }
 
     private fun onNotificationsChanged() {
@@ -360,31 +413,7 @@ class MainActivity : ComponentActivity() {
     /** Which apps get a light on the taskbar: foreground / recently used (usage access) or opened this session. */
     internal fun updateActive() {
         if (!::taskbar.isInitialized) return
-        val mode = prefs.activeMode
-        val m = HashMap<String, Int>()
-        if (mode != 0) {
-            if (ActiveApps.hasAccess(this)) {
-                val window = when (mode) {
-                    2 -> 30 * 60_000L
-                    3 -> 120 * 60_000L
-                    else -> 6 * 3_600_000L
-                }
-                for ((p, v) in ActiveApps.compute(this, window)) {
-                    if (mode == 1 && v < 2) continue
-                    m[p] = v
-                }
-            } else {
-                val fg = DroidBridge.foregroundPkg
-                if (fg.isNotEmpty()) m[fg] = 2
-            }
-            if (mode != 1) {
-                for (p in sessionOpened) if (!m.containsKey(p)) m[p] = 1
-            }
-            m.remove(packageName)
-            m.remove("com.android.systemui")
-            for (h in homePackages) m.remove(h)
-        }
-        taskbar.setActive(m)
+        taskbar.setActive(ActiveLogic.compute(this, prefs, sessionOpened, homePackages))
     }
 
     internal fun reorderPinned(order: List<String>) {
@@ -466,7 +495,7 @@ class MainActivity : ComponentActivity() {
         root.addView(gradientView, FrameLayout.LayoutParams(-1, -1))
         root.addView(wallpaperView, FrameLayout.LayoutParams(-1, -1))
 
-        taskbar = Taskbar(this)
+        taskbar = Taskbar(taskbarHost)
         widgets = DesktopWidgets(this)
         notif = NotificationCenter(this)
         search = SearchResults(this)
@@ -516,6 +545,7 @@ class MainActivity : ComponentActivity() {
             if (r - l != or2 - ol || b - t != ob - ot) onRootResized()
         }
         setContentView(root)
+        applySystemBars()
         applyInsets()
         root.requestApplyInsets()
         loadWallpaper(prefs.wallpaper, false)

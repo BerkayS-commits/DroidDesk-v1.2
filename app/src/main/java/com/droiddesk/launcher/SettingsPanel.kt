@@ -404,6 +404,11 @@ class SettingsPanel(private val a: MainActivity) {
             s(R.string.set_recents_mode),
             listOf(s(R.string.recents_dc), s(R.string.recents_sys)), a.prefs.recentsMode
         ) { a.prefs.recentsMode = it }
+        switchRow(s(R.string.set_previews), s(R.string.set_previews_sub), a.prefs.recentsPreviews) { on ->
+            a.prefs.recentsPreviews = on
+            if (!on) ThumbCache.clear()
+            DroidBridge.accessibility?.let { svc -> svc.scheduleCapture(1500L) }
+        }
         switchRow(s(R.string.set_task_view), s(R.string.set_task_view_sub), a.prefs.showTaskView) {
             a.prefs.showTaskView = it
             a.taskbar.render()
@@ -576,14 +581,21 @@ class SettingsPanel(private val a: MainActivity) {
         }
 
         section(R.string.sec_quick)
-        val tiles = listOf(
-            1 to R.string.tile_internet, 2 to R.string.tile_bluetooth, 4 to R.string.tile_airplane,
-            8 to R.string.tile_display, 16 to R.string.tile_sound, 32 to R.string.tile_battery,
-            64 to R.string.tile_power, 128 to R.string.tile_settings
+        hint(R.string.qs_hint)
+        QuickSettings.items().filter { it.available(a) }.forEach { item ->
+            switchRow(s(item.labelRes), "", (a.prefs.qsMask and item.bit) != 0) { on ->
+                a.prefs.qsMask = if (on) a.prefs.qsMask or item.bit else a.prefs.qsMask and item.bit.inv()
+                a.notif.buildQuick()
+            }
+        }
+        section(R.string.sec_info)
+        val infos = listOf(
+            1 to R.string.info_battery, 2 to R.string.info_network, 4 to R.string.info_storage,
+            8 to R.string.info_memory, 16 to R.string.info_device
         )
-        tiles.forEach { (bit, res) ->
-            switchRow(s(res), "", (a.prefs.qsMask and bit) != 0) { on ->
-                a.prefs.qsMask = if (on) a.prefs.qsMask or bit else a.prefs.qsMask and bit.inv()
+        infos.forEach { (bit, res) ->
+            switchRow(s(res), "", (a.prefs.infoMask and bit) != 0) { on ->
+                a.prefs.infoMask = if (on) a.prefs.infoMask or bit else a.prefs.infoMask and bit.inv()
                 a.notif.buildQuick()
             }
         }
@@ -641,10 +653,14 @@ class SettingsPanel(private val a: MainActivity) {
             }
         }
         hint(R.string.taskbar_key_hint)
-        switchRow(s(R.string.set_edge), s(R.string.set_edge_sub), a.prefs.tbEdge) { on ->
-            a.prefs.tbEdge = on
-            DroidBridge.accessibility?.let { it.overlays.refreshEdge() }
+        chipsRow(
+            s(R.string.set_zone),
+            listOf(s(R.string.zone_off), s(R.string.zone_edge), s(R.string.zone_br), s(R.string.zone_bl)), a.prefs.tbZone
+        ) {
+            a.prefs.tbZone = it
+            DroidBridge.accessibility?.let { svc -> svc.overlays.refreshEdge() }
         }
+        hint(R.string.set_zone_sub)
         actionRow(s(R.string.set_window_key), describe(a.prefs.winKey, a.prefs.winMods), R.drawable.ic_maximize) {
             pickKey(R.string.set_window_key, a.prefs.winKey, a.prefs.winMods, winPresets) { c, m ->
                 a.prefs.winKey = c

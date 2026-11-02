@@ -1,5 +1,6 @@
 package com.droiddesk.launcher
 
+import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -14,6 +15,30 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.Date
 import kotlin.math.abs
+
+/** What the taskbar needs from whoever shows it: the launcher itself, or the overlay on top of other apps. */
+interface TaskbarHost {
+    val ctx: Context
+    val prefs: Prefs
+    val handler: android.os.Handler
+    fun pinnedList(): MutableList<String>
+    fun entry(pkg: String): AppEntry?
+    fun glass(content: View, radiusDp: Int): FrameLayout
+    fun launch(app: AppEntry)
+    fun appMenu(app: AppEntry)
+    fun reorderPinned(order: List<String>)
+    fun toggleDrawer()
+    fun openSearch()
+    fun systemBack()
+    fun goHome()
+    fun openRecents()
+    fun openInternet()
+    fun openBluetooth()
+    fun openVolume()
+    fun openPower()
+    fun toggleNotifications(tab: Int)
+    fun onRendered()
+}
 
 /** Icons for the app-drawer button. Kept in one place so the taskbar, overlay and settings agree. */
 object StartIcons {
@@ -32,7 +57,9 @@ object StartIcons {
  * recent-apps button and the system tray. Active apps get a light under their icon; long-press an app,
  * then drag it sideways to reorder.
  */
-class Taskbar(private val a: MainActivity) {
+class Taskbar(private val host: TaskbarHost) {
+    private val a: Context = host.ctx
+
     lateinit var card: FrameLayout
         private set
     lateinit var trayBox: LinearLayout
@@ -75,9 +102,9 @@ class Taskbar(private val a: MainActivity) {
         navBox.orientation = LinearLayout.HORIZONTAL
         navBox.gravity = Gravity.CENTER_VERTICAL
         navBox.setPadding(a.dp(6), 0, a.dp(4), 0)
-        navBox.addView(fixedIcon(R.drawable.ic_nav_back, R.string.nav_back, 20) { a.systemBack() }, LinearLayout.LayoutParams(a.dp(42), -1))
-        navBox.addView(fixedIcon(R.drawable.ic_nav_home, R.string.nav_home, 20) { a.goHome() }, LinearLayout.LayoutParams(a.dp(42), -1))
-        navBox.addView(fixedIcon(R.drawable.ic_nav_square, R.string.task_view, 20) { a.openRecents() }, LinearLayout.LayoutParams(a.dp(42), -1))
+        navBox.addView(fixedIcon(R.drawable.ic_nav_back, R.string.nav_back, 20) { host.systemBack() }, LinearLayout.LayoutParams(a.dp(42), -1))
+        navBox.addView(fixedIcon(R.drawable.ic_nav_home, R.string.nav_home, 20) { host.goHome() }, LinearLayout.LayoutParams(a.dp(42), -1))
+        navBox.addView(fixedIcon(R.drawable.ic_nav_square, R.string.task_view, 20) { host.openRecents() }, LinearLayout.LayoutParams(a.dp(42), -1))
         val sepLine = View(a)
         sepLine.setBackgroundColor(Color.argb(50, 255, 255, 255))
         val sp = LinearLayout.LayoutParams(a.dp(1), a.dp(26))
@@ -95,19 +122,19 @@ class Taskbar(private val a: MainActivity) {
         trayBox.addView(chevron, llp(a.dp(28), a.dp(28)))
 
         wifi = a.circleIcon(R.drawable.ic_wifi, Theme.panel2, Theme.text, 18)
-        wifi.setOnClickListener { a.openInternetPanel() }
+        wifi.setOnClickListener { host.openInternet() }
         wifi.tip(a.getString(R.string.tile_internet))
         a.hoverScale(wifi)
         bt = a.circleIcon(R.drawable.ic_bluetooth, Theme.panel2, Theme.text, 18)
-        bt.setOnClickListener { a.openSettings(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS) }
+        bt.setOnClickListener { host.openBluetooth() }
         bt.tip(a.getString(R.string.tile_bluetooth))
         vol = a.circleIcon(R.drawable.ic_volume, Theme.panel2, Theme.text, 18)
-        vol.setOnClickListener { a.openVolumePanel() }
+        vol.setOnClickListener { host.openVolume() }
         vol.tip(a.getString(R.string.tile_sound))
 
         bellWrap = FrameLayout(a)
         bell = a.circleIcon(R.drawable.ic_bell, Theme.panel2, Theme.text, 18)
-        bell.setOnClickListener { a.toggleNotifications(0) }
+        bell.setOnClickListener { host.toggleNotifications(0) }
         bell.tip(a.getString(R.string.tab_notifications))
         bellWrap.addView(bell, FrameLayout.LayoutParams(a.dp(34), a.dp(34), Gravity.CENTER))
         badge = a.label("0", 9, Color.WHITE, true)
@@ -120,7 +147,7 @@ class Taskbar(private val a: MainActivity) {
         bellWrap.addView(badge, FrameLayout.LayoutParams(a.dp(16), a.dp(16), Gravity.TOP or Gravity.END))
 
         bat = a.circleIcon(R.drawable.ic_battery, Theme.panel2, Theme.text, 18)
-        bat.setOnClickListener { a.openSettings(android.content.Intent.ACTION_POWER_USAGE_SUMMARY) }
+        bat.setOnClickListener { host.openPower() }
         bat.tip(a.getString(R.string.tile_battery))
 
         a.hoverScale(bt)
@@ -136,31 +163,31 @@ class Taskbar(private val a: MainActivity) {
         clock = a.label("", 13, Theme.text, true)
         clock.gravity = Gravity.CENTER
         clock.setPadding(a.dp(10), 0, 0, 0)
-        clock.setOnClickListener { a.toggleNotifications(a.prefs.npTab) }
+        clock.setOnClickListener { host.toggleNotifications(host.prefs.npTab) }
         trayBox.addView(clock, llp(-2, -1))
         bar.addView(trayBox, FrameLayout.LayoutParams(-2, -1, Gravity.END or Gravity.CENTER_VERTICAL))
 
-        card = a.glassCard(bar, 22)
+        card = host.glass(bar, 22)
         return card
     }
 
     /** Show/hide tray icons and navigation buttons per settings, and keep the app group clear of both. */
     fun layout() {
         if (!::trayBox.isInitialized) return
-        val m = a.prefs.trayMask
+        val m = host.prefs.trayMask
         wifi.visibility = vis((m and 1) != 0)
         bt.visibility = vis((m and 2) != 0 && expanded)
         vol.visibility = vis((m and 4) != 0 && expanded)
         bellWrap.visibility = vis((m and 8) != 0)
         bat.visibility = vis((m and 16) != 0)
         chevron.rotation = if (expanded) 180f else 0f
-        navBox.visibility = vis(a.prefs.showNav)
+        navBox.visibility = vis(host.prefs.showNav)
         trayBox.measure(0, 0)
         navBox.measure(0, 0)
         val trayW = trayBox.measuredWidth + a.dp(8)
-        val navW = if (a.prefs.showNav) navBox.measuredWidth + a.dp(8) else 0
+        val navW = if (host.prefs.showNav) navBox.measuredWidth + a.dp(8) else 0
         val lp = centerScroll.layoutParams as FrameLayout.LayoutParams
-        if (a.prefs.taskbarAlign == 1) {
+        if (host.prefs.taskbarAlign == 1) {
             val side = maxOf(trayW, navW)
             lp.gravity = Gravity.CENTER
             lp.leftMargin = side
@@ -191,25 +218,25 @@ class Taskbar(private val a: MainActivity) {
         val start = FrameLayout(a)
         start.isClickable = true
         start.isFocusable = true
-        val startRes = StartIcons.res[a.prefs.startIcon.coerceIn(0, StartIcons.res.size - 1)]
+        val startRes = StartIcons.res[host.prefs.startIcon.coerceIn(0, StartIcons.res.size - 1)]
         start.addView(a.iconView(startRes, accent), FrameLayout.LayoutParams(a.dp(24), a.dp(24), Gravity.CENTER))
-        start.setOnClickListener { a.toggleDrawer() }
+        start.setOnClickListener { host.toggleDrawer() }
         start.tip(a.getString(R.string.apps))
         a.hoverable(start, 12, 1.12f)
         startView = start
         items.addView(start, LinearLayout.LayoutParams(a.dp(48), -1))
 
-        if (a.prefs.showSearch) {
-            items.addView(fixedIcon(R.drawable.ic_search, R.string.search_tooltip, 22) { a.openDrawer(true) }, LinearLayout.LayoutParams(a.dp(48), -1))
+        if (host.prefs.showSearch) {
+            items.addView(fixedIcon(R.drawable.ic_search, R.string.search_tooltip, 22) { host.openSearch() }, LinearLayout.LayoutParams(a.dp(48), -1))
         }
 
-        val pinned = a.pinned
+        val pinned = host.pinnedList()
         val running = active.keys
-            .filter { it !in pinned && a.appMap.containsKey(it) }
+            .filter { it !in pinned && host.entry(it) != null }
             .sortedByDescending { active[it] ?: 0 }
             .take(8)
         for (pkg in pinned + running) {
-            val app = a.appMap[pkg] ?: continue
+            val app = host.entry(pkg) ?: continue
             val level = active[pkg] ?: 0
             val cell = FrameLayout(a)
             cell.isClickable = true
@@ -227,10 +254,10 @@ class Taskbar(private val a: MainActivity) {
             cellPkgs.add(pkg)
         }
 
-        if (a.prefs.showTaskView) {
-            items.addView(fixedIcon(R.drawable.ic_recents, R.string.task_view, 22) { a.openRecents() }, LinearLayout.LayoutParams(a.dp(48), -1))
+        if (host.prefs.showTaskView) {
+            items.addView(fixedIcon(R.drawable.ic_recents, R.string.task_view, 22) { host.openRecents() }, LinearLayout.LayoutParams(a.dp(48), -1))
         }
-        a.updateScrim()
+        host.onRendered()
     }
 
     /** The light under an active app: a glow plus a bar (long = in front, short = used recently). */
@@ -276,7 +303,7 @@ class Taskbar(private val a: MainActivity) {
                     if ((ev.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) {
                         held = true
                         moved = true
-                        a.showAppMenu(app, false)
+                        host.appMenu(app)
                     } else {
                         val r = Runnable {
                             held = true
@@ -284,7 +311,7 @@ class Taskbar(private val a: MainActivity) {
                             v.parent?.requestDisallowInterceptTouchEvent(true)
                         }
                         pending = r
-                        a.handler.postDelayed(r, ViewConfiguration.getLongPressTimeout().toLong())
+                        host.handler.postDelayed(r, ViewConfiguration.getLongPressTimeout().toLong())
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -293,16 +320,16 @@ class Taskbar(private val a: MainActivity) {
                         drag(cell, dx)
                     } else if (abs(dx) > slop) {
                         moved = true
-                        pending?.let { a.handler.removeCallbacks(it) }
+                        pending?.let { host.handler.removeCallbacks(it) }
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    pending?.let { a.handler.removeCallbacks(it) }
+                    pending?.let { host.handler.removeCallbacks(it) }
                     if (held && dragIndex >= 0) endDrag(cell, ev.rawX - downX, app)
-                    else if (!moved && !held) a.launchApp(app)
+                    else if (!moved && !held) host.launch(app)
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    pending?.let { a.handler.removeCallbacks(it) }
+                    pending?.let { host.handler.removeCallbacks(it) }
                     if (held && dragIndex >= 0) endDrag(cell, 0f, app)
                 }
             }
@@ -342,14 +369,14 @@ class Taskbar(private val a: MainActivity) {
         cell.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
         cell.translationZ = 0f
         if (abs(dx) < slop) {
-            a.showAppMenu(app, false)   // long-press without moving opens the menu
+            host.appMenu(app)   // long-press without moving opens the menu
             return
         }
         if (target != from && from in cellPkgs.indices) {
             val order = cellPkgs.toMutableList()
             val moved = order.removeAt(from)
             order.add(target, moved)
-            a.reorderPinned(order)
+            host.reorderPinned(order)
         }
     }
 
@@ -359,15 +386,15 @@ class Taskbar(private val a: MainActivity) {
         if (!::clock.isInitialized) return
         val accent = Theme.accentColor
         clock.text = android.text.format.DateFormat.getTimeFormat(a).format(Date())
-        val online = a.networkConnected()
+        val online = SysInfo.networkConnected(a)
         setCircle(wifi, if (online) accent else Theme.panel2, if (online) Theme.bg else Theme.text)
-        val btOn = a.bluetoothOn()
+        val btOn = SysInfo.bluetoothOn(a)
         setCircle(bt, if (btOn) accent else Theme.panel2, if (btOn) Theme.bg else Theme.text)
         val n = DroidBridge.notificationCount
         badge.visibility = if (n > 0) View.VISIBLE else View.GONE
         badge.text = if (n > 99) "99+" else n.toString()
         setCircle(bell, if (n > 0) accent else Theme.panel2, if (n > 0) Theme.bg else Theme.text)
-        val pct = a.batteryPercent()
+        val pct = SysInfo.batteryPercent(a)
         setCircle(bat, Theme.panel2, if (pct in 0..15) Color.rgb(248, 113, 113) else Theme.text)
     }
 

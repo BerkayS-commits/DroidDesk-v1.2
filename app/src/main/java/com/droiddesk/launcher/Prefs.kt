@@ -137,7 +137,7 @@ class Prefs(context: Context) {
     var npPreview by boolP("npPreview", true)
     var npOngoing by boolP("npOngoing", false)
     var npMax by intP("npMax", 20)
-    var qsMask by intP("qsMask", 255)
+    var qsMask by intP("qsMask", 8191)
     var qsShape by intP("qsShape", 0)                    // 0 circle, 1 rounded square
 
     // ---- mouse / keys
@@ -154,7 +154,11 @@ class Prefs(context: Context) {
     var recentsMode by intP("recentsMode", 0)            // 0 DroidDesk switcher, 1 system recents
     var tbKey by intP("tbKey", 0)                        // key that brings the taskbar over any app
     var tbMods by intP("tbMods", 0)
-    var tbEdge by boolP("tbEdge", false)                 // reveal the taskbar by moving the mouse to the bottom edge
+    var tbEdge by boolP("tbEdge", false)                 // (legacy, replaced by tbZone)
+    var tbZone by intP("tbZone", 0)                      // pointer zone that brings the taskbar back: 0 off, 1 bottom edge, 2 bottom-right, 3 bottom-left
+    var recentsPreviews by boolP("recentsPreviews", false)
+    var infoMask by intP("infoMask", 15)                 // device info cards in the notification panel
+    var keepAwake by boolP("keepAwake", false)
 
     // ---- search
     var searchFiles by boolP("searchFiles", true)

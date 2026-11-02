@@ -74,24 +74,28 @@ fun llp(w: Int, h: Int, left: Int = 0): LinearLayout.LayoutParams {
     return p
 }
 
-/** Hover for mouse users: highlight, optional grow effect, hand cursor and a focus ring for keyboard users. */
+/**
+ * Hover for mouse users: visible highlight with an accent outline, a grow effect, the hand cursor, a small
+ * press effect for touch, and a focus ring for keyboard users.
+ */
 fun Context.hoverable(v: View, radiusDp: Int = 12, scale: Float = 1f) {
     if (Build.VERSION.SDK_INT >= 24) v.pointerIcon = PointerIcon.getSystemIcon(this, PointerIcon.TYPE_HAND)
+    val grow = if (scale > 1f) scale + 0.04f else 1f
     v.setOnHoverListener { view, e ->
         when (e.action) {
             MotionEvent.ACTION_HOVER_ENTER -> {
-                view.background = rounded(Theme.accentColor.withAlpha(45), radiusDp)
-                if (scale > 1f) view.animate().scaleX(scale).scaleY(scale).setDuration(120).start()
+                view.background = rounded(Theme.accentColor.withAlpha(90), radiusDp, Theme.accentColor.withAlpha(200), 1)
+                if (grow > 1f) view.animate().scaleX(grow).scaleY(grow).setDuration(120).start()
             }
             MotionEvent.ACTION_HOVER_EXIT -> {
                 view.background = null
-                if (scale > 1f) view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                if (grow > 1f) view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
             }
         }
         false
     }
     v.setOnFocusChangeListener { view, has ->
-        view.background = if (has) rounded(Theme.accentColor.withAlpha(35), radiusDp, Theme.accentColor, 2) else null
+        view.background = if (has) rounded(Theme.accentColor.withAlpha(60), radiusDp, Theme.accentColor, 2) else null
     }
 }
 

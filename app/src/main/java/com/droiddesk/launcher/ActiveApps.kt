@@ -65,3 +65,33 @@ object ActiveApps {
         return out
     }
 }
+
+/** Decides which apps get a light on the taskbar. Shared by the launcher and the taskbar overlay. */
+object ActiveLogic {
+    fun compute(ctx: Context, prefs: Prefs, session: Collection<String>, homes: Set<String>): Map<String, Int> {
+        val mode = prefs.activeMode
+        val m = HashMap<String, Int>()
+        if (mode == 0) return m
+        if (ActiveApps.hasAccess(ctx)) {
+            val window = when (mode) {
+                2 -> 30 * 60_000L
+                3 -> 120 * 60_000L
+                else -> 6 * 3_600_000L
+            }
+            for ((p, v) in ActiveApps.compute(ctx, window)) {
+                if (mode == 1 && v < 2) continue
+                m[p] = v
+            }
+        } else {
+            val fg = DroidBridge.foregroundPkg
+            if (fg.isNotEmpty()) m[fg] = 2
+        }
+        if (mode != 1) {
+            for (p in session) if (!m.containsKey(p)) m[p] = 1
+        }
+        m.remove(ctx.packageName)
+        m.remove("com.android.systemui")
+        for (h in homes) m.remove(h)
+        return m
+    }
+}

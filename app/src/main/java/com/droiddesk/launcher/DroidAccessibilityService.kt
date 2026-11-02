@@ -1,7 +1,14 @@
 package com.droiddesk.launcher
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.view.Display
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 
@@ -20,11 +27,78 @@ class DroidAccessibilityService : AccessibilityService() {
     private val prefs by lazy { Prefs(this) }
     val overlays by lazy { OverlayController(this) }
 
+    private val captureHandler = Handler(Looper.getMainLooper())
+    private val captureRunnable = Runnable { captureForeground(null) }
+
+    /** Capture a small preview of the front app later (only when the user turned previews on). */
+    fun scheduleCapture(delayMs: Long) {
+        if (Build.VERSION.SDK_INT < 30 || !prefs.recentsPreviews) return
+        captureHandler.removeCallbacks(captureRunnable)
+        captureHandler.postDelayed(captureRunnable, delayMs)
+    }
+
+    /** Runs [after] once the preview is stored (or immediately when previews are off / not possible). */
+    fun captureForeground(after: (() -> Unit)?) {
+        val pkg = DroidBridge.foregroundPkg
+        val interactive = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        if (Build.VERSION.SDK_INT < 30 || !prefs.recentsPreviews || pkg.isEmpty() ||
+            DroidBridge.launcherVisible || overlays.isShowing() || !interactive
+        ) {
+            after?.invoke()
+            if (prefs.recentsPreviews) scheduleCapture(30_000L)
+            return
+        }
+        doCapture(pkg, after)
+    }
+
+    @androidx.annotation.RequiresApi(30)
+    private fun doCapture(pkg: String, after: (() -> Unit)?) {
+        var finished = false
+        val finish: () -> Unit = {
+            if (!finished) {
+                finished = true
+                after?.invoke()
+                scheduleCapture(30_000L)
+            }
+        }
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                    try {
+                        val hb = result.hardwareBuffer
+                        val hw = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)
+                        if (hw != null) {
+                            val soft = hw.copy(Bitmap.Config.ARGB_8888, false)
+                            if (soft != null) {
+                                val k = 300f / maxOf(soft.width, soft.height)
+                                val small = Bitmap.createScaledBitmap(
+                                    soft, maxOf(1, (soft.width * k).toInt()), maxOf(1, (soft.height * k).toInt()), true
+                                )
+                                ThumbCache.put(pkg, small)
+                            }
+                        }
+                        hb.close()
+                    } catch (e: Exception) {
+                        // Protected window or no access: keep the previous preview.
+                    }
+                    finish()
+                }
+
+                override fun onFailure(errorCode: Int) { finish() }
+            })
+        } catch (e: Exception) {
+            finish()
+            return
+        }
+        captureHandler.postDelayed({ finish() }, 800L)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName || pkg.startsWith("com.android.systemui") || pkg.contains("inputmethod")) return
         DroidBridge.foregroundPkg = pkg
+        scheduleCapture(1500L)
     }
 
     override fun onInterrupt() {}
@@ -36,6 +110,7 @@ class DroidAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        captureHandler.removeCallbacksAndMessages(null)
         overlays.dismissAll()
         DroidBridge.accessibility = null
         return super.onUnbind(intent)

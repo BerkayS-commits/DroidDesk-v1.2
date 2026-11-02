@@ -8,6 +8,7 @@ object DroidBridge {
     @Volatile var listenerConnected: Boolean = false
     @Volatile var onNotificationsChanged: (() -> Unit)? = null
     @Volatile var foregroundPkg: String = ""
+    @Volatile var launcherVisible: Boolean = false
     @Volatile private var startRequested: Boolean = false
     @Volatile private var shrinkPkg: String? = null
     @Volatile private var pendingAction: String? = null

@@ -1,49 +1,30 @@
-# DroidDesk 1.5 – klavye ve fareyle kullanılan masaüstü hissi veren Android launcher
+# DroidDesk 1.6
 
-Desteklenen Android sürümleri: **7.0 (API 24) ve üzeri**. Derleme hedefi Android 15 (API 35); daha yeni sürümlerde yalnızca herkese açık API'ler kullanılır ve hedef sürüm 35 olduğu için sistem uyumluluk davranışı uygular. Android 16 ve sonrası bu ortamda denenemedi (aşağıya bak).
+Android 7.0 (API 24) ve üzeri. Derleme hedefi API 35.
 
-## 1.5'te yeni / düzeltilen
+## 1.6'da düzeltilen hatalar
+- **Android 10+ sürümlerinde uygulama hiç açılmıyordu.** Neden: `window.insetsController`, `setContentView`'den önce çağrılıyordu; Android 11+ sürümlerinde o anda decor view yok ve sistem içeride `NullPointerException` fırlatıyor (Android 9 ve altında bu kod yolu çalışmadığı için açılıyordu). Çağrı artık `setContentView`'den sonra ve hata yakalamalı yapılıyor.
+- **Simge şekilleri değişmiyordu.** Neden: maske `drawPath` + `DST_IN` ile uygulanıyordu; Porter-Duff modları yalnızca *çizilen* pikselleri etkiler, şeklin dışı hiç silinmiyordu. Ayarlardaki önizleme düz çizim olduğu için doğru görünüyor, gerçek simgeler değişmiyordu. Artık tam boyutlu maske bitmap'i kullanılıyor; yuvarlatılmış kare, su damlası, yaprak, daire, altıgen masaüstü, görev çubuğu, çekmece, son uygulamalar ve bildirim panelinde uygulanır.
+- **Fareyle üzerine gelince tepki yoktu / çok silikti.** Vurgu belirgin hale getirildi: dolgu + vurgu renginde çerçeve, büyüme efekti, el imleci, basınca küçülme. Klavyeyle gezerken odaklanan öğe çerçevelenir.
 
-**Düzeltmeler**
-- **Sağ tık / uzun basma menüsü artık çekmecenin önünde.** Sorun, çekmece kartının yüksekliğinin (elevation) menüden fazla olmasıydı; menü en üst katmana alındı.
-- **Simge şekli masaüstünü de kapsıyor:** Şekil ve simge paketi masaüstü, görev çubuğu, çekmece, son uygulamalar ve bildirim paneli için aynı kaynaktan geliyor. Tek bir simgenin işlenememesi artık listeyi boşaltmıyor (o simge orijinal çiziliyor).
+## Bildirim paneli (sağ alt)
+- **Tek dokunuş = aç/kapat, uzun basma = o ayarın Android sayfası.** Kutular açıkken renkli, kapalıyken sönük görünür.
+- Yeni kutular: NFC, Rahatsız etmeyin, El feneri, Otomatik döndür, Koyu mod, Sessiz, Ekran açık kalsın, Konum, Pil tasarrufu, Ekran görüntüsü, Ekranı kilitle (Wi-Fi, Bluetooth, Uçak modu, Ekran, Ses, Güç, Ayarlar ile birlikte toplam 18).
+- **Cihaz bilgisi kartları:** pil (yüzde, şarj, sıcaklık), ağ, depolama, bellek, cihaz modeli.
+- **Hangilerinin görüneceği** Ayarlar → Bildirimler sekmesinde tek tek seçilir (kutular ve bilgi kartları ayrı).
 
-**Tuş seçim ekranı (Ayarlar → Fare ve tuşlar)**
-- Basılan kombinasyonu canlı gösteren ve hazır kısayol sunan bir ekran. İki bağlama kullanılır:
-  1. **Görev çubuğunu açık uygulamanın üzerine getiren tuş.** Tuşa basınca görev çubuğu o an açık olan uygulamanın üstünde belirir (Başlat, sabitli ve etkin uygulamalar, son uygulamalar, saat, isteğe bağlı gezinme düğmeleri); dışına dokununca kapanır. İsteğe bağlı olarak **fareyi ekranın alt kenarına götürünce** de açılır.
-  2. Öndeki uygulamayı pencere modunda yeniden açan tuş.
-- Üst katman, erişilebilirlik hizmeti ile çizilir (ayrıca "üstte görüntüle" izni gerekmez).
+## Son uygulamalar
+- **Uygulama önizlemesi:** Ayarlar → Görev çubuğu → "Son uygulamalarda uygulama önizlemesi". Öndeki uygulamanın küçük ekran görüntüsü alınır ve bloklarda gösterilir (Android 11+, erişilebilirlik hizmeti gerekir). Görüntüler yalnızca bellekte tutulur; kaydedilmez, gönderilmez. Varsayılan kapalıdır.
 
-**Uygulama çekmecesi**
-- **Yukarıdan aşağıya kaydırma** (varsayılan; fare tekerleği çalışır) veya sayfalı mod, ayarlardan seçilir.
-- **8 farklı düğme simgesi:** nokta, halka, altıgen, kareler, yıldız, şimşek, çiçek, elmas.
+## Uygulamanın üstüne gelen görev çubuğu
+- Artık ayrı bir şerit değil, **gerçek görev çubuğunun kendisi**: aynı düzen, Başlat düğmesi, arama, gezinme düğmeleri, sabitli ve etkin uygulamalar, ışıklar, tepsi simgeleri ve saat. Aynı koddan çiziliyor.
+- **Geri getirme bölgesi** (Ayarlar → Fare ve tuşlar): kapalı / alt kenar / sağ alt köşe / sol alt köşe. Bir uygulama açıkken fareyi o bölgeye götürünce görev çubuğu yeniden görünür. Kısayol tuşu ve dışına dokununca kapanma aynen duruyor.
 
-**Masaüstü hissi**
-- Masaüstü, çekmece, görev çubuğu ve son uygulamalar ekranında fareyle üzerinden geçerken simgeler büyür; el imleci görünür; klavyeyle gezerken odaklanan öğe çerçevelenir.
-- **Klavye kısayolları:** Win = çekmece, Win+D masaüstü, Win+E dosyalar, Win+S arama, Win+A bildirimler, Win+I ayarlar, Win+Tab / Alt+Tab son uygulamalar, Ctrl+Esc çekmece, Esc paneller, ok tuşları + Enter simgeler arasında gezinme ve açma, Delete masaüstü kısayolunu kaldırma. (Başka uygulamadayken çalışması için erişilebilirlik hizmeti gerekir.)
-
-**Son uygulamalar (yeniden tasarlandı)**
-- Düğme ve Alt+Tab artık **kare bloklar halinde** bir geçiş ekranı açar: her blokta uygulama simgesi ve adı, tek tek kapatma düğmesi; altta **"Tümünü kapat"**. Klavye: Tab/oklar seç, Enter aç, Delete kapat, Esc çık; Alt tuşunu bırakınca seçili uygulama açılır.
-- İstersen düğmeyi sistemin kendi son uygulamalar ekranına geri çevirebilirsin (Görev çubuğu ayarları).
-
-**Sistem gezinmesi**
-- Görev çubuğuna **Geri, Ana ekran, Son uygulamalar** düğmeleri eklenebilir. Ayarlardan veya görev çubuğuna sağ tıklayarak açılıp kapanır.
-
-## İsteğe bağlı izinler (varsayılan kapalı)
-- **Erişilebilirlik hizmeti:** Win/Alt+Tab kısayolları, açık uygulamanın üstünde görev çubuğu ve geçiş ekranı, Geri düğmesi, güç menüsü, pencere modu tuşu. Ekran içeriğini okumaz.
-- **Bildirim erişimi**, **Kullanım erişimi** (etkin uygulama ışığı ve son uygulamalar sırası), **Tüm dosyalara erişim** (dosya araması), **İnternet** (yalnızca hava durumu).
-- **Arka plan işlemlerini sonlandırma** (normal izin): "Tümünü kapat" için.
-
-## GitHub Actions ile APK derleme
-1. ZIP'i açın ve **içindekilerin tümünü** depo köküne yükleyin (`.github` dahil).
-2. Actions → `Build DroidDesk APK` iş akışını çalıştırın.
-3. `DroidDesk-debug-apk` artifact'ini indirip kurun, ana ekran olarak DroidDesk'i seçin.
+## İzinler
+Yeni (hepsi isteğe bağlı): Wi-Fi/Bluetooth durumu ve değiştirme, NFC, Rahatsız etmeyin erişimi, Sistem ayarlarını değiştirme (otomatik döndürme için). İlk kullanımda ilgili sistem ekranı açılır.
 
 ## Sınırlamalar (dürüst liste)
-- Kaynak kod Android SDK ile **derlenip cihazda denenmemiştir**; ilk Actions derlemesi doğrulamadır. Android 7–15 için API sürümü korumaları eklendi; **Android 16 ve 17'de davranış doğrulanamadı**.
-- **"Kapat" ne yapar:** Android, başlatıcılara başka uygulamayı kapatma yetkisi vermez. "Kapat" ve "Tümünü kapat", uygulamanın **arka plan işlemlerini sonlandırır** ve listeden çıkarır. Ön plandaki uygulama kapanmaz. Bazı üreticiler bunu kısıtlar.
-- **Son uygulamalar listesi:** Android uygulamalara gerçek son görev listesini vermez. Liste, "Kullanım erişimi" verilirse kullanım olaylarından, verilmezse DroidDesk'ten açılan uygulamalardan oluşur. Önizleme (ekran görüntüsü) gösterilemez; bloklarda simge ve ad vardır.
-- **Açık uygulamanın üstündeki görev çubuğu** erişilebilirlik hizmeti ister. Oradan uygulama başlatma bazı Android sürümlerinde arka plan başlatma kısıtına takılabilir; başlatılamazsa uyarı görünür. Başlat düğmesi Ana ekrana dönüp çekmeceyi açar.
-- **Pencere modu tuşu** uygulamayı pencere sınırlarıyla yeniden açar ve cihazda **serbest pencere desteği** gerektirir (Geliştirici seçenekleri). Desteklemeyen cihazda tam ekran açılır.
-- Işık, dosya araması, simge paketi, hava durumu ve diğer önceki sınırlamalar 1.4'teki gibidir. Dosya/klasör araması harici depolamada ad eşleştirir; içeriğe bakmaz.
-- Wi-Fi/Bluetooth/Uçak modu kutuları sistem panelini veya ayarını açar; doğrudan aç/kapat yapmaz.
+- **Android üçüncü taraf uygulamaya bu anahtarları vermez:** Android 10+ sürümlerinde Wi-Fi, Bluetooth (Android 12+), Uçak modu, NFC ve **koyu mod** doğrudan açılıp kapatılamaz. Bu kutular **durumu gösterir**, dokununca ilgili sistem panelini açar (Wi-Fi ve NFC için hızlı panel, diğerleri için ayar sayfası). Android 9 ve altında Wi-Fi, Android 11 ve altında Bluetooth gerçekten açılıp kapanır. El feneri, Rahatsız etmeyin (izinle), Otomatik döndür (izinle), Sessiz, Ekran açık kalsın, Ekran görüntüsü ve Kilitle gerçekten çalışır. Ekran görüntüsü ve Kilitle Android 9+ ve erişilebilirlik hizmeti ister.
+- **Önizleme** korumalı pencerelerde (bankacılık vb.) çalışmaz; Android 10 ve altında hiç kullanılamaz. Önizleme, uygulamayı en son önde gördüğümüz andaki görüntüdür, canlı içerik değildir.
+- Daha önce belirtilen kısıtlar geçerlidir: son uygulamalar listesi Android'in gerçek görev listesi değildir, "Kapat" arka plan işlemlerini sonlandırır, pencere modu cihazın serbest pencere desteğine bağlıdır.
+- Kaynak kod Android SDK ile **derlenip cihazda denenmemiştir**; Android 16 ve 17'de davranış doğrulanamadı.

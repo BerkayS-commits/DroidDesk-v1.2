@@ -19,8 +19,6 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 
-private class QTile(val bit: Int, val iconRes: Int, val labelRes: Int, val color: Int, val action: () -> Unit)
-
 private class NItem(
     val key: String,
     val pkg: String,
@@ -127,7 +125,10 @@ class NotificationCenter(private val a: MainActivity) {
         tabNotif.setTextColor(if (t == 0) Theme.bg else Theme.text)
         tabQuick.background = a.rounded(if (t == 1) Theme.accentColor else Theme.panel2, 17)
         tabQuick.setTextColor(if (t == 1) Theme.bg else Theme.text)
-        if (t == 0) refresh() else syncSliders()
+        if (t == 0) refresh() else {
+            syncSliders()
+            refreshState()
+        }
     }
 
     // ------------------------------------------------------------------ notifications tab
@@ -288,49 +289,51 @@ class NotificationCenter(private val a: MainActivity) {
 
     // ------------------------------------------------------------------ quick settings tab
 
+    private val tileViews = ArrayList<Pair<QsItem, FrameLayout>>()
+    private val infoViews = ArrayList<Pair<Int, TextView>>()
+
     fun buildQuick() {
         quickPage.removeAllViews()
+        tileViews.clear()
+        infoViews.clear()
         val mask = a.prefs.qsMask
-        val tools = listOf(
-            QTile(1, R.drawable.ic_wifi, R.string.tile_internet, Color.rgb(45, 140, 255)) { a.openInternetPanel() },
-            QTile(2, R.drawable.ic_bluetooth, R.string.tile_bluetooth, Color.rgb(124, 92, 255)) { a.openSettings(Settings.ACTION_BLUETOOTH_SETTINGS) },
-            QTile(4, R.drawable.ic_airplane, R.string.tile_airplane, Color.rgb(100, 116, 139)) { a.openSettings(Settings.ACTION_AIRPLANE_MODE_SETTINGS) },
-            QTile(8, R.drawable.ic_display, R.string.tile_display, Color.rgb(139, 92, 246)) { a.openSettings(Settings.ACTION_DISPLAY_SETTINGS) },
-            QTile(16, R.drawable.ic_volume, R.string.tile_sound, Color.rgb(249, 115, 22)) { a.openVolumePanel() },
-            QTile(32, R.drawable.ic_battery, R.string.tile_battery, Color.rgb(16, 185, 129)) { a.openSettings(Intent.ACTION_POWER_USAGE_SUMMARY) },
-            QTile(64, R.drawable.ic_power, R.string.tile_power, Color.rgb(239, 68, 68)) {
-                a.withAccessibility(a.getString(R.string.tile_power)) {
-                    it.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)
-                }
-            },
-            QTile(128, R.drawable.ic_settings, R.string.tile_settings, Color.rgb(100, 116, 139)) { a.openAndroidSettings() }
-        ).filter { (mask and it.bit) != 0 }
+        val tools = QuickSettings.items().filter { (mask and it.bit) != 0 && it.available(a) }
 
         val grid = GridLayout(a)
         grid.columnCount = 4
-        tools.forEach { tool ->
+        tools.forEach { item ->
             val tile = LinearLayout(a)
             tile.orientation = LinearLayout.VERTICAL
             tile.gravity = Gravity.CENTER_HORIZONTAL
             tile.setPadding(0, a.dp(6), 0, a.dp(6))
             tile.isClickable = true
             tile.isFocusable = true
-            tile.setOnClickListener { tool.action() }
-            a.hoverable(tile)
+            tile.setOnClickListener {
+                item.onTap(a)
+                a.handler.postDelayed({ refreshState() }, 450L)
+            }
+            tile.setOnLongClickListener {
+                item.onLong(a)
+                true
+            }
+            a.hoverable(tile, 14, 1.06f)
+            tile.tip(a.getString(R.string.qs_tip))
             val bg = GradientDrawable()
             if (a.prefs.qsShape == 0) bg.shape = GradientDrawable.OVAL else bg.cornerRadius = a.dp(16).toFloat()
-            bg.setColor(tool.color)
+            bg.setColor(Theme.panel2)
             val circle = FrameLayout(a)
             circle.background = bg
-            circle.addView(a.iconView(tool.iconRes, Color.WHITE), FrameLayout.LayoutParams(a.dp(26), a.dp(26), Gravity.CENTER))
+            circle.addView(a.iconView(item.iconRes, item.color), FrameLayout.LayoutParams(a.dp(26), a.dp(26), Gravity.CENTER))
             tile.addView(circle, LinearLayout.LayoutParams(a.dp(52), a.dp(52)))
-            val name = a.label(a.getString(tool.labelRes), 11, Theme.text)
+            val name = a.label(a.getString(item.labelRes), 11, Theme.text)
             name.gravity = Gravity.CENTER
-            tile.addView(name, LinearLayout.LayoutParams(-2, a.dp(26)))
+            name.maxLines = 2
+            tile.addView(name, LinearLayout.LayoutParams(-2, a.dp(30)))
             val p = GridLayout.LayoutParams()
             p.width = 0
             p.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
             grid.addView(tile, p)
+            tileViews.add(item to circle)
         }
         if (tools.isNotEmpty()) quickPage.addView(grid, LinearLayout.LayoutParams(-1, -2))
 
@@ -349,6 +352,66 @@ class NotificationCenter(private val a: MainActivity) {
             a.window.attributes = wp
         })
         quickPage.addView(sliderRow(R.drawable.ic_brightness, brightnessSeek) { }, topMargin(a.dp(8)))
+
+        addInfoCards()
+        refreshState()
+    }
+
+    private fun addInfoCards() {
+        val mask = a.prefs.infoMask
+        val defs = listOf(
+            Triple(1, R.drawable.ic_battery, R.string.info_battery),
+            Triple(2, R.drawable.ic_wifi, R.string.info_network),
+            Triple(4, R.drawable.ic_folder, R.string.info_storage),
+            Triple(8, R.drawable.ic_memory, R.string.info_memory),
+            Triple(16, R.drawable.ic_phone, R.string.info_device)
+        ).filter { (mask and it.first) != 0 }
+        if (defs.isEmpty()) return
+        val g = GridLayout(a)
+        g.columnCount = 2
+        defs.forEach { (bit, icon, titleRes) ->
+            val card = LinearLayout(a)
+            card.orientation = LinearLayout.HORIZONTAL
+            card.gravity = Gravity.CENTER_VERTICAL
+            card.setPadding(a.dp(10), a.dp(8), a.dp(8), a.dp(8))
+            card.background = a.rounded(Theme.panel2.withAlpha(150), 14)
+            card.addView(a.iconView(icon, Theme.accentColor), LinearLayout.LayoutParams(a.dp(20), a.dp(20)))
+            val col = LinearLayout(a)
+            col.orientation = LinearLayout.VERTICAL
+            col.addView(a.label(a.getString(titleRes), 10, Theme.muted))
+            val value = a.label("", 12, Theme.text, true)
+            value.maxLines = 1
+            value.ellipsize = android.text.TextUtils.TruncateAt.END
+            col.addView(value)
+            val cp = LinearLayout.LayoutParams(0, -2, 1f)
+            cp.leftMargin = a.dp(8)
+            card.addView(col, cp)
+            val p = GridLayout.LayoutParams()
+            p.width = 0
+            p.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+            p.setMargins(a.dp(3), a.dp(3), a.dp(3), a.dp(3))
+            g.addView(card, p)
+            infoViews.add(bit to value)
+        }
+        quickPage.addView(g, topMargin(a.dp(12)))
+    }
+
+    private fun infoText(bit: Int): String = when (bit) {
+        1 -> SysInfo.batteryText(a)
+        2 -> SysInfo.networkName(a)
+        4 -> SysInfo.storageText()
+        8 -> SysInfo.ramText(a)
+        else -> SysInfo.deviceText()
+    }
+
+    /** Re-reads the on/off state of every tile and the info cards. */
+    fun refreshState() {
+        for ((item, circle) in tileViews) {
+            val on = try { item.isOn(a) } catch (e: Exception) { false }
+            (circle.background as? GradientDrawable)?.setColor(if (on) item.color else Theme.panel2)
+            (circle.getChildAt(0) as? ImageView)?.setColorFilter(if (on) Color.WHITE else item.color)
+        }
+        for ((bit, tv) in infoViews) tv.text = infoText(bit)
     }
 
     private fun topMargin(px: Int): LinearLayout.LayoutParams {

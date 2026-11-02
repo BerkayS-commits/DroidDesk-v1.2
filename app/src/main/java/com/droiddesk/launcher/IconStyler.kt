@@ -69,9 +69,16 @@ object IconStyler {
             d.setBounds(inset, inset, size - inset, size - inset)
             d.draw(c)
         }
-        val mask = Paint(Paint.ANTI_ALIAS_FLAG)
-        mask.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-        c.drawPath(path(shape, size.toFloat()), mask)
+        // Porter-Duff modes only touch the pixels that are drawn, so drawing the bare path would leave
+        // everything outside the shape untouched. Draw a full-size mask bitmap instead.
+        val maskBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val shapePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        shapePaint.color = 0xFF000000.toInt()
+        Canvas(maskBmp).drawPath(path(shape, size.toFloat()), shapePaint)
+        val dstIn = Paint()
+        dstIn.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        c.drawBitmap(maskBmp, 0f, 0f, dstIn)
+        maskBmp.recycle()
         return bmp
     }
 
