@@ -62,6 +62,8 @@ class Prefs(context: Context) {
         set(value) { sp.edit().putString("accentKey", value).apply() }
 
     var accentCustom by intP("accentCustom", Color.rgb(96, 165, 250))
+    /** "" = follow the system language; otherwise a BCP-47 tag such as "de" or "pt-BR". */
+    var language by strP("language", "")
     var glass by boolP("glassMode", true)
     var gradient by strP("gradientMode", "bluepurple")
 
@@ -85,7 +87,6 @@ class Prefs(context: Context) {
 
     var iconSize by intP("iconSize", 1)
     var seeded by boolP("seeded", false)
-    var weatherCity by strP("weatherCity", "")
 
     // ---- icons
     /** 0 original, 1 circle, 2 squircle, 3 square, 4 teardrop, 5 leaf, 6 hexagon */
@@ -106,29 +107,34 @@ class Prefs(context: Context) {
     var drawerAlign by intP("drawerAlign", 1)            // 0 left, 1 centre, 2 right
     var drawerCols by intP("drawerCols", 0)              // 0 auto
 
-    // ---- widgets
-    /** Bit mask: 1 clock+weather, 2 calendar, 4 system status, 8 quote. */
-    var widgetMask by intP("widgetMask", 7)
-    var widgetOrder by strP("widgetOrder", "1,2,4,8")
+    // ---- widgets (real Android widgets hosted by AppWidgetHost)
+    fun widgetIdList(): MutableList<Int> =
+        (sp.getString("hostedWidgets", "") ?: "").split(",").mapNotNull { it.trim().toIntOrNull() }.toMutableList()
 
-    fun orderedWidgets(): List<Int> {
-        val parsed = widgetOrder.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in listOf(1, 2, 4, 8) }
-        val rest = listOf(1, 2, 4, 8).filter { it !in parsed }
-        return parsed + rest
+    private fun writeWidgetIds(l: List<Int>) { sp.edit().putString("hostedWidgets", l.joinToString(",")).apply() }
+
+    fun addWidget(id: Int) {
+        val l = widgetIdList()
+        if (id !in l) { l.add(id); writeWidgetIds(l) }
     }
 
-    fun moveWidget(bit: Int, dir: Int) {
-        val l = orderedWidgets().toMutableList()
-        val i = l.indexOf(bit)
+    fun removeWidget(id: Int) {
+        writeWidgetIds(widgetIdList().filter { it != id })
+        sp.edit().remove("gw$id").remove("gh$id").apply()
+    }
+
+    fun moveWidget(id: Int, dir: Int) {
+        val l = widgetIdList()
+        val i = l.indexOf(id)
         val j = i + dir
         if (i < 0 || j < 0 || j >= l.size) return
         l[i] = l[j].also { l[j] = l[i] }
-        widgetOrder = l.joinToString(",")
+        writeWidgetIds(l)
     }
 
-    fun widgetW(bit: Int): Int = sp.getInt("ww$bit", 0)
-    fun widgetH(bit: Int): Int = sp.getInt("wh$bit", 0)
-    fun setWidgetSize(bit: Int, wDp: Int, hDp: Int) { sp.edit().putInt("ww$bit", wDp).putInt("wh$bit", hDp).apply() }
+    fun widgetW(id: Int): Int = sp.getInt("gw$id", 0)
+    fun widgetH(id: Int): Int = sp.getInt("gh$id", 0)
+    fun setWidgetSize(id: Int, wDp: Int, hDp: Int) { sp.edit().putInt("gw$id", wDp).putInt("gh$id", hDp).apply() }
 
     // ---- notification centre
     var npWidth by intP("npWidth", 1)                    // 0 narrow, 1 normal, 2 wide
@@ -162,22 +168,4 @@ class Prefs(context: Context) {
 
     // ---- search
     var searchFiles by boolP("searchFiles", true)
-
-    // ---- weather cache
-    fun loadWeather(): WeatherInfo? {
-        if (!sp.contains("wxTime")) return null
-        return WeatherInfo(
-            sp.getString("wxName", "") ?: "",
-            sp.getInt("wxTemp", 0),
-            sp.getInt("wxCode", 0),
-            sp.getLong("wxTime", 0L)
-        )
-    }
-
-    fun saveWeather(w: WeatherInfo) {
-        sp.edit().putString("wxName", w.city).putInt("wxTemp", w.tempC)
-            .putInt("wxCode", w.code).putLong("wxTime", w.fetchedAt).apply()
-    }
-
-    fun clearWeather() { sp.edit().remove("wxTime").apply() }
 }

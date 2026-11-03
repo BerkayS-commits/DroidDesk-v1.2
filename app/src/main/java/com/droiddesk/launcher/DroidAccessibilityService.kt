@@ -3,6 +3,7 @@ package com.droiddesk.launcher
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
@@ -22,6 +23,21 @@ import android.view.accessibility.AccessibilityEvent
  *  - user-chosen key   : reopen the front app in a window
  */
 class DroidAccessibilityService : AccessibilityService() {
+    private var locTag: String? = null
+    private var locRes: Resources? = null
+
+    /** Overlay text follows the language chosen in DroidDesk settings (default: the system language). */
+    override fun getResources(): Resources {
+        val plain = super.getResources()
+        val tag = try { LocaleHelper.savedTag(this) } catch (e: Exception) { "" }
+        if (tag.isEmpty()) return plain
+        if (tag != locTag || locRes == null) {
+            locRes = try { LocaleHelper.localizedResources(this, plain) } catch (e: Exception) { plain }
+            locTag = tag
+        }
+        return locRes ?: plain
+    }
+
     private var metaDown = false
     private var metaChord = false
     private val prefs by lazy { Prefs(this) }

@@ -414,6 +414,7 @@ class SettingsPanel(private val a: MainActivity) {
             a.taskbar.render()
         }
         switchRow(s(R.string.set_windowed), s(R.string.set_windowed_sub), a.prefs.windowed) { a.prefs.windowed = it }
+        actionRow(s(R.string.ff_title), s(R.string.ff_title_sub), R.drawable.ic_tune) { freeformDialog() }
 
         section(R.string.sec_active)
         chipsRow(
@@ -517,34 +518,51 @@ class SettingsPanel(private val a: MainActivity) {
 
     private fun widgetsTab() {
         section(R.string.st_widgets)
-        val items = listOf(
-            1 to R.string.widget_clock, 2 to R.string.widget_calendar,
-            4 to R.string.widget_system, 8 to R.string.widget_quote
-        )
-        items.forEach { (bit, res) ->
-            switchRow(s(res), "", (a.prefs.widgetMask and bit) != 0) { on ->
-                a.prefs.widgetMask = if (on) a.prefs.widgetMask or bit else a.prefs.widgetMask and bit.inv()
-                a.widgets.rebuild()
-                a.onRootResized()
+        actionRow(s(R.string.widget_add), s(R.string.widget_add_sub), R.drawable.ic_widgets) {
+            a.widgets.showPicker()
+        }
+        if (a.widgets.hasAny()) {
+            actionRow(s(R.string.widget_resize), s(R.string.widget_resize_sub), R.drawable.ic_maximize) {
+                a.closeSettings()
+                a.widgets.setEdit(true)
+            }
+            actionRow(s(R.string.widget_remove_all), s(R.string.widget_remove_all_sub), R.drawable.ic_close) {
+                a.widgets.removeAll()
+                refreshKeep()
             }
         }
-        actionRow(s(R.string.widget_resize), s(R.string.widget_resize_sub), R.drawable.ic_maximize) {
-            a.closeSettings()
-            a.widgets.setEdit(true)
+        hint(R.string.widget_hint)
+    }
+
+    private fun languageDialog() {
+        val tags = listOf("") + LocaleHelper.languages.map { it.tag }
+        val names = listOf(s(R.string.lang_system)) + LocaleHelper.languages.map { it.name }
+        val cur = tags.indexOf(a.prefs.language).coerceAtLeast(0)
+        AlertDialog.Builder(a)
+            .setTitle(R.string.set_language)
+            .setSingleChoiceItems(names.toTypedArray(), cur) { d, which ->
+                d.dismiss()
+                if (tags[which] != a.prefs.language) a.applyLanguage(tags[which])
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun freeformDialog() {
+        val st = Freeform.status(a)
+        val b = AlertDialog.Builder(a)
+            .setTitle(R.string.ff_title)
+            .setMessage(Freeform.report(a, st))
+            .setNegativeButton(R.string.ff_close, null)
+            .setNeutralButton(R.string.dev_options) { _, _ ->
+                a.safeStart(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            }
+        if (st.canWriteSecure) {
+            b.setPositiveButton(R.string.ff_enable) { _, _ ->
+                a.toast(if (Freeform.enableSettings(a)) R.string.ff_enabled_restart else R.string.toast_cannot_open)
+            }
         }
-        actionRow(s(R.string.set_weather), a.prefs.weatherCity.ifBlank { s(R.string.weather_set_city) }, R.drawable.ic_widgets) {
-            a.widgets.askCity()
-        }
-        actionRow(s(R.string.widget_remove_all), s(R.string.widget_remove_all_sub), R.drawable.ic_close) {
-            a.prefs.widgetMask = 0
-            a.widgets.rebuild()
-            a.onRootResized()
-            refreshKeep()
-        }
-        actionRow(s(R.string.widget_restore), s(R.string.widget_restore_sub), R.drawable.ic_refresh) {
-            a.widgets.restoreDefaults()
-            refreshKeep()
-        }
+        b.show()
     }
 
     private fun notificationsTab() {
@@ -703,6 +721,7 @@ class SettingsPanel(private val a: MainActivity) {
 
     private fun systemTab() {
         section(R.string.st_system)
+        actionRow(s(R.string.set_language), LocaleHelper.currentName(a), R.drawable.ic_display) { languageDialog() }
         actionRow(s(R.string.set_keyboard), s(R.string.set_keyboard_sub), R.drawable.ic_display) {
             a.safeStart(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }

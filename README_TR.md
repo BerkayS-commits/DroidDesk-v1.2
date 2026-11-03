@@ -1,12 +1,18 @@
-# DroidDesk 1.6
+# DroidDesk 1.7
 
 Android 7.0 (API 24) ve üzeri. Derleme hedefi API 35.
 
-## 1.6'da düzeltilen hatalar
-- **Android 10+ sürümlerinde uygulama hiç açılmıyordu.** Neden: `window.insetsController`, `setContentView`'den önce çağrılıyordu; Android 11+ sürümlerinde o anda decor view yok ve sistem içeride `NullPointerException` fırlatıyor (Android 9 ve altında bu kod yolu çalışmadığı için açılıyordu). Çağrı artık `setContentView`'den sonra ve hata yakalamalı yapılıyor.
-- **Simge şekilleri değişmiyordu.** Neden: maske `drawPath` + `DST_IN` ile uygulanıyordu; Porter-Duff modları yalnızca *çizilen* pikselleri etkiler, şeklin dışı hiç silinmiyordu. Ayarlardaki önizleme düz çizim olduğu için doğru görünüyor, gerçek simgeler değişmiyordu. Artık tam boyutlu maske bitmap'i kullanılıyor; yuvarlatılmış kare, su damlası, yaprak, daire, altıgen masaüstü, görev çubuğu, çekmece, son uygulamalar ve bildirim panelinde uygulanır.
-- **Fareyle üzerine gelince tepki yoktu / çok silikti.** Vurgu belirgin hale getirildi: dolgu + vurgu renginde çerçeve, büyüme efekti, el imleci, basınca küçülme. Klavyeyle gezerken odaklanan öğe çerçevelenir.
+## 1.7'de değişenler
+- **Yerleşik widget'lar kaldırıldı** (saat+hava durumu, takvim, sistem durumu, günün sözü). Bunların yerine cihazınızdaki **uygulamaların gerçek Android widget'ları** eklenebiliyor (AppWidgetHost). Masaüstüne uzun basın / sağ tıklayın → *Widget ekle*; ya da Ayarlar → Widget'lar. Yüklü uygulamaların widget'ları aranabilir bir listede görünür; ilk eklemede Android bir kez izin sorabilir, ayarı olan widget'ların ayar ekranı açılır. Widget'a uzun basın / sağ tıklayın: boyutlandır, taşı, kaldır. Köşe tutamacıyla serbest boyutlandırma var.
+- **Dar ekranlarda (telefon, dikey) widget'lar kısayolların üstünde bir şerit olarak görünür**; geniş ekranlarda sağ sütunda durur.
+- Hava durumu kaldırıldığı için **INTERNET izni de kaldırıldı**: uygulama artık hiçbir ağ isteği yapmıyor.
+- **Dil seçimi:** Ayarlar → Sistem → Dil. Varsayılan **sistem dilidir**; seçim yapmazsanız uygulama telefonun diline uyar. Sunulan diller: English, Türkçe, Deutsch, Français, Español, Русский, العربية (Android 13+ sistem ayarlarındaki "Uygulama dilleri" ekranında da görünür). Çevirisi olmayan bir metin İngilizce gösterilir. Yeni dil eklemek için `res/values-xx/strings.xml` oluşturup `LocaleHelper.languages` ve `res/xml/locales_config.xml` dosyalarına eklemek yeterli.
+- **Serbest pencere:** "Pencerelerde aç" seçeneği artık yalnızca sınır vermek yerine pencere modunu da istiyor (cihaz serbest pencereyi destekliyorsa). Ayarlar → Görev çubuğu → **Serbest pencere denetimi** cihazın durumunu (sistem özelliği, geliştirici ayarları, API erişimi, harici ekran) gösterir ve neyin açılması gerektiğini söyler. Bir kez `adb shell pm grant com.droiddesk.launcher android.permission.WRITE_SECURE_SETTINGS` verirseniz iki geliştirici anahtarı uygulamadan açılabilir (yeniden başlatma gerekir).
 
+### Serbest pencere hakkında dürüst not
+Serbest pencere bir **sistem özelliğidir**; üçüncü taraf bir uygulama bunu yalnızca *isteyebilir*. Pencere modu API'si gizli (hidden) olduğundan Android'in yeni sürümlerinde uygulamalara kapalı olabilir; Xiaomi/HyperOS ise kayan pencereleri kendi kapalı özelliğiyle yönetir. Bu yüzden Xiaomi 15 / HyperOS 4 / Android 17'de çalışacağını **garanti edemiyorum** ve cihazda denemedim. Denetim ekranı tam olarak hangi koşulun eksik olduğunu gösterecektir.
+
+## 1.6'dan beri geçerli olanlar
 ## Bildirim paneli (sağ alt)
 - **Tek dokunuş = aç/kapat, uzun basma = o ayarın Android sayfası.** Kutular açıkken renkli, kapalıyken sönük görünür.
 - Yeni kutular: NFC, Rahatsız etmeyin, El feneri, Otomatik döndür, Koyu mod, Sessiz, Ekran açık kalsın, Konum, Pil tasarrufu, Ekran görüntüsü, Ekranı kilitle (Wi-Fi, Bluetooth, Uçak modu, Ekran, Ses, Güç, Ayarlar ile birlikte toplam 18).
@@ -27,4 +33,4 @@ Yeni (hepsi isteğe bağlı): Wi-Fi/Bluetooth durumu ve değiştirme, NFC, Rahat
 - **Android üçüncü taraf uygulamaya bu anahtarları vermez:** Android 10+ sürümlerinde Wi-Fi, Bluetooth (Android 12+), Uçak modu, NFC ve **koyu mod** doğrudan açılıp kapatılamaz. Bu kutular **durumu gösterir**, dokununca ilgili sistem panelini açar (Wi-Fi ve NFC için hızlı panel, diğerleri için ayar sayfası). Android 9 ve altında Wi-Fi, Android 11 ve altında Bluetooth gerçekten açılıp kapanır. El feneri, Rahatsız etmeyin (izinle), Otomatik döndür (izinle), Sessiz, Ekran açık kalsın, Ekran görüntüsü ve Kilitle gerçekten çalışır. Ekran görüntüsü ve Kilitle Android 9+ ve erişilebilirlik hizmeti ister.
 - **Önizleme** korumalı pencerelerde (bankacılık vb.) çalışmaz; Android 10 ve altında hiç kullanılamaz. Önizleme, uygulamayı en son önde gördüğümüz andaki görüntüdür, canlı içerik değildir.
 - Daha önce belirtilen kısıtlar geçerlidir: son uygulamalar listesi Android'in gerçek görev listesi değildir, "Kapat" arka plan işlemlerini sonlandırır, pencere modu cihazın serbest pencere desteğine bağlıdır.
-- Kaynak kod Android SDK ile **derlenip cihazda denenmemiştir**; Android 16 ve 17'de davranış doğrulanamadı.
+- Kaynak kod Android SDK ile **derlenip cihazda denenmemiştir** (1.7 değişiklikleri de); Android 16 ve 17'de davranış doğrulanamadı.

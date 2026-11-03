@@ -4,8 +4,6 @@
     <string name="desktop_empty">No desktop shortcuts yet. Open the Apps menu and long-press an app to add one.</string>
     <string name="apps">Apps</string>
     <string name="search_apps">Search apps…</string>
-    <string name="no_apps">No apps found</string>
-
     <string name="tile_internet">Wi-Fi</string>
     <string name="tile_bluetooth">Bluetooth</string>
     <string name="tile_airplane">Airplane</string>
@@ -14,7 +12,6 @@
     <string name="tile_battery">Battery</string>
     <string name="tile_power">Power</string>
     <string name="tile_settings">Settings</string>
-
     <string name="menu_open">Open</string>
     <string name="menu_open_external">Open on external display</string>
     <string name="menu_add_shortcut">Add to desktop</string>
@@ -25,7 +22,6 @@
     <string name="menu_move_right">Move right</string>
     <string name="menu_app_info">App info</string>
     <string name="menu_uninstall">Uninstall</string>
-
     <string name="menu_wallpaper">Change wallpaper</string>
     <string name="menu_view">View</string>
     <string name="menu_sort">Sort</string>
@@ -33,95 +29,48 @@
     <string name="menu_add_widget">Add widget</string>
     <string name="menu_open_drawer">Open app drawer</string>
     <string name="menu_files_window">Files window</string>
-    <string name="menu_settings">Settings</string>
     <string name="view_small">Small icons</string>
     <string name="view_medium">Medium icons</string>
     <string name="view_large">Large icons</string>
     <string name="sort_name">By name</string>
     <string name="sort_recent">By recently used</string>
-
-    <string name="widget_clock">Clock and weather</string>
-    <string name="widget_calendar">Calendar</string>
-    <string name="widget_system">System status</string>
-    <string name="widget_quote">Daily quote</string>
-    <string name="system_status">System status</string>
-    <string name="sys_battery">Battery</string>
-    <string name="sys_storage">Storage</string>
-    <string name="sys_ram">RAM</string>
-
-    <string name="weather_set_city">Tap to set city</string>
-    <string name="weather_city_title">Weather city</string>
-    <string name="weather_city_msg">The city name is sent to Open-Meteo to look up the weather. Leave empty to turn weather off.</string>
-    <string name="weather_city_hint">e.g. Istanbul</string>
-    <string name="wx_clear">Clear</string>
-    <string name="wx_partly">Partly cloudy</string>
-    <string name="wx_cloudy">Cloudy</string>
-    <string name="wx_fog">Fog</string>
-    <string name="wx_drizzle">Drizzle</string>
-    <string name="wx_rain">Rain</string>
-    <string name="wx_snow">Snow</string>
-    <string name="wx_storm">Thunderstorm</string>
-
     <string name="files_window_title">Files</string>
     <string name="folder_documents">Documents</string>
     <string name="folder_downloads">Downloads</string>
     <string name="folder_pictures">Pictures</string>
     <string name="folder_music">Music</string>
-
     <string name="settings_title">DroidDesk settings</string>
-    <string name="set_accent">Accent color</string>
     <string name="set_gradient">Gradient background</string>
-    <string name="set_wallpaper">Choose wallpaper</string>
     <string name="set_glass">Toggle glass effect</string>
     <string name="set_taskbar">Taskbar size</string>
     <string name="set_drawer_w">App drawer width</string>
     <string name="set_drawer_h">App drawer height</string>
-    <string name="set_weather">Weather city</string>
-    <string name="set_clear">Clear desktop shortcuts</string>
     <string name="set_keyboard">Keyboard shortcuts (Alt+Tab, Win key)</string>
     <string name="set_notifications">Notification access (tray)</string>
     <string name="set_default_launcher">Set as default launcher</string>
-    <string name="set_android">Android settings</string>
-
     <string name="accent_blue">Windows blue</string>
     <string name="accent_purple">Purple</string>
     <string name="accent_teal">Teal</string>
     <string name="accent_green">Green</string>
     <string name="accent_orange">Orange</string>
     <string name="accent_pink">Pink</string>
-
     <string name="grad_bluepurple">Blue-purple</string>
     <string name="grad_sunset">Sunset</string>
     <string name="grad_forest">Forest</string>
     <string name="grad_pink">Pink-purple</string>
     <string name="grad_solid">Solid dark</string>
-
     <string name="cancel">Cancel</string>
     <string name="save">Save</string>
     <string name="clear">Clear</string>
     <string name="enable">Enable</string>
     <string name="confirm_clear">Remove all desktop shortcuts?</string>
-
     <string name="toast_cannot_open">This app could not be opened</string>
     <string name="toast_wallpaper_ok">Wallpaper updated</string>
     <string name="toast_wallpaper_fail">Could not load the image</string>
-
     <string name="a11y_needed_title">Accessibility service required</string>
     <string name="a11y_needed_msg">%1$s needs the DroidDesk accessibility service. It is used only for keyboard shortcuts and system actions and does not read screen content. Open accessibility settings to enable it?</string>
     <string name="a11y_description">DroidDesk keyboard shortcuts (Alt+Tab, Win key), system actions, the taskbar over other apps and optional small app previews for the recent-apps screen. Does not read screen content.</string>
-    <string name="notif_access_title">Notification access</string>
     <string name="notif_access_msg">To show the notification bell in the tray, grant DroidDesk notification access. Only the count is used; contents are not read or stored.</string>
-    <string name="tray_notifications">Notifications</string>
-
-    <string-array name="quotes">
-        <item>Small steps today build a better tomorrow.</item>
-        <item>Focus on progress, not perfection.</item>
-        <item>Start where you are, use what you have.</item>
-        <item>A calm mind finishes more than a rushed one.</item>
-        <item>Little by little, the work becomes the habit.</item>
-        <item>Today is a good day to begin.</item>
-        <item>Curiosity is the shortest path to learning.</item>
-    </string-array>
     <string name="accent_custom">Custom color…</string>
     <string name="accent_custom_sub">Pick any color with hue, saturation and brightness</string>
     <string name="accent_cyan">Cyan</string>
@@ -155,10 +104,7 @@
     <string name="file_access_sub">Lets search find files and folders</string>
     <string name="key_clear">Remove shortcut</string>
     <string name="key_not_set">Not set</string>
-    <string name="key_presets">Choose a preset</string>
-    <string name="key_presets_sub">Win + ↓, Alt + F10 and more</string>
     <string name="key_record_msg">Press the key combination you want to use now (physical keyboard).</string>
-    <string name="key_record_title">Record shortcut</string>
     <string name="menu_hide_search">Hide search button</string>
     <string name="menu_hide_taskview">Hide recent apps button</string>
     <string name="menu_open_window">Open in window</string>
@@ -197,7 +143,6 @@
     <string name="sec_icons">Icons</string>
     <string name="sec_quick">Quick tiles</string>
     <string name="sec_tray">Tray icons</string>
-    <string name="sec_window_key">Window mode key</string>
     <string name="set_active">Light under active apps</string>
     <string name="set_align">Taskbar icon position</string>
     <string name="set_dc_empty">Double-click on empty desktop</string>
@@ -261,7 +206,7 @@
     <string name="tab_quick">Quick settings</string>
     <string name="task_view">Recent apps</string>
     <string name="taskbar_settings">Taskbar settings</string>
-    <string name="toast_no_freeform">Freeform windows are off on this device; turn them on in Developer options</string>
+    <string name="toast_no_freeform">Freeform windows are not available here. See Settings → Taskbar → Freeform window check</string>
     <string name="toast_reindexing">The file index will rebuild on the next search</string>
     <string name="tray_settings">Tray settings</string>
     <string name="usage_access">Usage access</string>
@@ -275,8 +220,6 @@
     <string name="widget_remove_all_sub">Clears the desktop; you can add them back any time</string>
     <string name="widget_resize">Resize widgets</string>
     <string name="widget_resize_sub">Drag the corner handle of each widget</string>
-    <string name="widget_restore">Restore default widgets</string>
-    <string name="widget_restore_sub">Clock, calendar and system status at default sizes</string>
     <string name="window_key_hint">The key sends the app that is in front back through Home and reopens it in a window. It needs the accessibility service and works only where the device supports freeform windows (turn them on in Developer options).</string>
     <string name="wp_aurora">Aurora</string>
     <string name="wp_dunes">Desert dunes</string>
@@ -302,8 +245,6 @@
     <string name="sec_keys">Keyboard</string>
     <string name="sec_shortcuts">Built-in shortcuts</string>
     <string name="set_drawer_mode">Scrolling</string>
-    <string name="set_edge">Show taskbar from the bottom edge</string>
-    <string name="set_edge_sub">Move the mouse to the bottom edge of any app (needs the accessibility service)</string>
     <string name="set_nav">System navigation buttons</string>
     <string name="set_nav_sub">Back, Home and Recents on the taskbar</string>
     <string name="set_recents_mode">Recent apps button opens</string>
@@ -351,4 +292,31 @@
     <string name="zone_br">Bottom-right corner</string>
     <string name="zone_edge">Bottom edge</string>
     <string name="zone_off">Off</string>
+    <string name="widget_add">Add widget</string>
+    <string name="widget_add_sub">Pick from the widgets of your installed apps</string>
+    <string name="widget_hint">These are the real Android widgets of your apps. Long-press or right-click a widget to resize, move or remove it. On narrow screens they appear above the shortcuts.</string>
+    <string name="widget_pick_title">Add a widget</string>
+    <string name="widget_pick_search">Search widgets…</string>
+    <string name="widget_none_available">No widgets are available on this device</string>
+    <string name="widget_add_failed">This widget could not be added</string>
+    <string name="set_language">Language</string>
+    <string name="lang_system">System default</string>
+    <string name="ff_title">Freeform window check</string>
+    <string name="ff_title_sub">Why windows may not open and what to turn on</string>
+    <string name="ff_close">Close</string>
+    <string name="ff_enable">Turn on</string>
+    <string name="ff_enabled_restart">Freeform settings turned on. Restart the phone for them to take effect.</string>
+    <string name="ff_yes">Yes</string>
+    <string name="ff_no">No</string>
+    <string name="ff_unknown">Unknown</string>
+    <string name="ff_android">Android version</string>
+    <string name="ff_feature">Freeform window support (system feature)</string>
+    <string name="ff_setting">Freeform setting</string>
+    <string name="ff_force">Force activities to be resizable</string>
+    <string name="ff_api">Window-mode API reachable by apps</string>
+    <string name="ff_display">External display connected</string>
+    <string name="ff_hint_api">This Android version hides the window-mode API from apps, so DroidDesk cannot force a freeform window. Only the system\'s own window features work.</string>
+    <string name="ff_hint_off">In Developer options turn on “Enable freeform windows” and “Force activities to be resizable”, then restart the phone.</string>
+    <string name="ff_hint_xiaomi">On Xiaomi / HyperOS, floating windows are handled by the system\'s own feature, which launchers cannot reach.</string>
+    <string name="ff_adb">Optional: run this once from a computer to be able to turn these settings on from here:\nadb shell pm grant %1$s android.permission.WRITE_SECURE_SETTINGS</string>
 </resources>

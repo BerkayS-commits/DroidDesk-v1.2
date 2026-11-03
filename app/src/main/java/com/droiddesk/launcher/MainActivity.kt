@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
 
     internal lateinit var taskbar: Taskbar
     internal lateinit var widgets: DesktopWidgets
+    private lateinit var body: LinearLayout
     internal lateinit var notif: NotificationCenter
     private lateinit var search: SearchResults
     private lateinit var filesWin: FilesWindow
@@ -212,6 +213,17 @@ class MainActivity : ComponentActivity() {
 
     // ------------------------------------------------------------------ lifecycle
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
+    /** Applies the language chosen in settings: the activity is rebuilt with the new strings. */
+    internal fun applyLanguage(tag: String) {
+        prefs.language = tag
+        DroidBridge.accessibility?.overlays?.let { it.dismissAll() }
+        recreate()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
@@ -234,6 +246,22 @@ class MainActivity : ComponentActivity() {
         QuickSettings.registerTorch(this) { if (::notif.isInitialized && notifOpen) notif.refreshState() }
         DroidBridge.onNotificationsChanged = { handler.post { onNotificationsChanged() } }
         reloadApps()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        widgets.start()
+    }
+
+    override fun onStop() {
+        widgets.stop()
+        super.onStop()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (::widgets.isInitialized) widgets.onActivityResult(requestCode, resultCode)
     }
 
     override fun onResume() {
@@ -398,7 +426,6 @@ class MainActivity : ComponentActivity() {
     private fun tick() {
         if (!::taskbar.isInitialized) return
         taskbar.updateTray()
-        widgets.update()
         updateActive()
         if (notifOpen && notif.tab == 0) notif.refresh()
         if (notifOpen && notif.tab == 1) notif.refreshState()
@@ -505,7 +532,7 @@ class MainActivity : ComponentActivity() {
         desktop.orientation = LinearLayout.VERTICAL
         root.addView(desktop, FrameLayout.LayoutParams(-1, -1))
 
-        val body = LinearLayout(this)
+        body = LinearLayout(this)
         body.orientation = LinearLayout.HORIZONTAL
         desktopArea = FrameLayout(this)
         desktopGrid = GridLayout(this)
@@ -558,9 +585,34 @@ class MainActivity : ComponentActivity() {
         onRootResized()
     }
 
+
+    /** Width available to the widget column (the whole desktop width on narrow screens). */
+    internal fun widgetAreaWidth(): Int {
+        if (!::root.isInitialized || !::desktop.isInitialized || root.width == 0) return dp(560)
+        val full = root.width - desktop.paddingLeft - desktop.paddingRight
+        return if (root.width < dp(720)) full else minOf(full / 2, dp(560))
+    }
+
+    /**
+     * Wide screens: shortcuts on the left, widgets in a column on the right. Narrow screens (phone in
+     * portrait): widgets in a strip above the shortcuts, so they are still usable.
+     */
+    private fun layoutBody() {
+        val any = widgets.hasAny()
+        widgets.scroll.visibility = if (any) View.VISIBLE else View.GONE
+        val narrow = root.width < dp(720)
+        body.orientation = if (narrow) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        val areaLp = if (narrow) LinearLayout.LayoutParams(-1, 0, 1f) else LinearLayout.LayoutParams(0, -1, 1f)
+        val widLp = if (narrow) LinearLayout.LayoutParams(-1, (root.height * 0.42f).toInt())
+        else LinearLayout.LayoutParams(-2, -1)
+        desktopArea.layoutParams = areaLp
+        widgets.scroll.layoutParams = widLp
+        widgets.applyWidth()
+    }
+
     internal fun onRootResized() {
         if (!::root.isInitialized || !::taskbar.isInitialized || root.width == 0) return
-        widgets.scroll.visibility = if (root.width >= dp(720) && widgets.hasAny()) View.VISIBLE else View.GONE
+        layoutBody()
         taskbar.expanded = root.width >= dp(640)
         taskbar.layout()
         updateOverlayLayout()
@@ -1149,7 +1201,6 @@ class MainActivity : ComponentActivity() {
         e.add(MenuEntry(R.drawable.ic_sort, s(R.string.menu_sort), true) { showSortMenu() })
         e.add(MenuEntry(R.drawable.ic_refresh, s(R.string.menu_refresh), false) {
             reloadApps()
-            widgets.refreshWeather(true)
         })
         e.add(sep())
         e.add(MenuEntry(R.drawable.ic_widgets, s(R.string.menu_add_widget), true) { showWidgetToggleMenu() })
@@ -1192,42 +1243,29 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showWidgetToggleMenu() {
-        val items = listOf(
-            1 to R.string.widget_clock, 2 to R.string.widget_calendar,
-            4 to R.string.widget_system, 8 to R.string.widget_quote
-        )
         val e = mutableListOf<MenuEntry>()
-        items.forEach { (bit, res) ->
-            e.add(MenuEntry(0, checked((prefs.widgetMask and bit) != 0, s(res)), false) {
-                prefs.widgetMask = prefs.widgetMask xor bit
-                widgets.rebuild()
-                onRootResized()
-                showWidgetToggleMenu()
-            })
+        e.add(MenuEntry(R.drawable.ic_widgets, s(R.string.widget_add), false) { widgets.showPicker() })
+        if (widgets.hasAny()) {
+            e.add(MenuEntry(R.drawable.ic_maximize, s(R.string.widget_resize), false) { widgets.setEdit(true) })
+            e.add(sep())
+            e.add(MenuEntry(R.drawable.ic_close, s(R.string.widget_remove_all), false) { widgets.removeAll() })
         }
-        e.add(sep())
-        e.add(MenuEntry(R.drawable.ic_close, s(R.string.widget_remove_all), false) {
-            prefs.widgetMask = 0
-            widgets.rebuild()
-            onRootResized()
-        })
-        e.add(MenuEntry(R.drawable.ic_refresh, s(R.string.widget_restore), false) { widgets.restoreDefaults() })
         showMenu(menuX, menuY, e)
     }
 
-    private fun showWidgetItemMenu(bit: Int, x: Float, y: Float) {
+    private fun showWidgetItemMenu(id: Int, x: Float, y: Float) {
         val e = mutableListOf<MenuEntry>()
+        e.add(MenuEntry(R.drawable.ic_widgets, s(R.string.widget_add), false) { widgets.showPicker() })
         e.add(MenuEntry(R.drawable.ic_maximize, s(R.string.widget_resize), false) { widgets.setEdit(true) })
-        e.add(MenuEntry(0, s(R.string.size_small), false) { widgets.preset(bit, 220) })
-        e.add(MenuEntry(0, s(R.string.size_medium), false) { widgets.preset(bit, 300) })
-        e.add(MenuEntry(0, s(R.string.size_large), false) { widgets.preset(bit, 420) })
-        e.add(MenuEntry(0, s(R.string.size_reset), false) { widgets.resetSize(bit) })
+        e.add(MenuEntry(0, s(R.string.size_small), false) { widgets.preset(id, 220) })
+        e.add(MenuEntry(0, s(R.string.size_medium), false) { widgets.preset(id, 300) })
+        e.add(MenuEntry(0, s(R.string.size_large), false) { widgets.preset(id, 420) })
+        e.add(MenuEntry(0, s(R.string.size_reset), false) { widgets.resetSize(id) })
         e.add(sep())
-        e.add(MenuEntry(0, s(R.string.move_up), false) { widgets.move(bit, -1) })
-        e.add(MenuEntry(0, s(R.string.move_down), false) { widgets.move(bit, 1) })
-        if (bit == 1) e.add(MenuEntry(R.drawable.ic_widgets, s(R.string.set_weather), false) { widgets.askCity() })
+        e.add(MenuEntry(0, s(R.string.move_up), false) { widgets.move(id, -1) })
+        e.add(MenuEntry(0, s(R.string.move_down), false) { widgets.move(id, 1) })
         e.add(sep())
-        e.add(MenuEntry(R.drawable.ic_close, s(R.string.widget_remove), false) { widgets.remove(bit) })
+        e.add(MenuEntry(R.drawable.ic_close, s(R.string.widget_remove), false) { widgets.remove(id) })
         showMenu(x, y, e)
     }
 
@@ -1346,18 +1384,11 @@ class MainActivity : ComponentActivity() {
         if (displayId != null) {
             if (Build.VERSION.SDK_INT >= 26) options.setLaunchDisplayId(displayId)
         } else if (freeform || prefs.windowed) {
-            // Honoured only on devices with freeform windows enabled; ignored otherwise.
+            // Honoured only where the system allows freeform windows; otherwise the app opens normally.
             options.setLaunchBounds(nextBounds())
-            if (freeform) {
-                if (!packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)) {
-                    toast(R.string.toast_no_freeform)
-                }
-                try {
-                    val m = ActivityOptions::class.java.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType)
-                    m.invoke(options, 5) // WINDOWING_MODE_FREEFORM (hidden API, best effort)
-                } catch (e: Throwable) {
-                    // Not available on this Android version.
-                }
+            if (freeform || Freeform.hasFeature(this)) {
+                val applied = Freeform.requestFreeform(options)
+                if (freeform && (!applied || !Freeform.hasFeature(this))) toast(R.string.toast_no_freeform)
             }
         }
         val started = try {
@@ -1666,7 +1697,7 @@ class MainActivity : ComponentActivity() {
     private val T_TILE = 5
     private val T_EMPTY = 6
 
-    /** What is under the pointer. Widgets return 100 + widget bit. */
+    /** What is under the pointer. Widgets return 100 + appWidgetId. */
     private fun targetAt(x: Float, y: Float): Int {
         if (!::taskbar.isInitialized || drawerOpen || notifOpen || menuOpen || settings != null) return T_OVERLAY
         if (isOverView(taskbar.card, x, y)) {
@@ -1678,7 +1709,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (filesWin.isOver(x, y)) return T_OVERLAY
-        val wb = widgets.bitAt(x, y)
+        val wb = widgets.idAt(x, y)
         if (wb != 0) return 100 + wb
         for (i in 0 until desktopGrid.childCount) {
             if (isOverView(desktopGrid.getChildAt(i), x, y)) return T_TILE
